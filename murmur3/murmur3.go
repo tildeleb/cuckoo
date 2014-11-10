@@ -140,8 +140,8 @@ func (d *Digest) Sum32() uint32 {
 
 // Sum32 returns the 32 bit hash of data given the seed.
 // This is code is what I started with before I added the hash.Hash and hash.Hash32 interfaces.
-func Sum32(data []byte) uint32 {
-	hash := uint32(0)
+func Sum32(data []byte, seed uint32) uint32 {
+	hash := seed
 	nblocks := len(data) / 4
 	for i := 0; i < nblocks; i++ {
 		k := *(*uint32)(unsafe.Pointer(&data[i*4]))

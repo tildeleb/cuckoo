@@ -13,6 +13,10 @@ var tests = []struct {
 	s     string
 }{
 	{0x00000000, ""},
+	{0x3c2569b2, "a"},
+	{0x4f31114c, "bc"},
+	{0xf5797de2, "def"},
+	{0x13704969, "ghij"},
 	{0x248bfa47, "hello"},
 	{0x149bbb7f, "hello, world"},
 	{0xe31e8a70, "19 Jan 2038 at 3:14:07 AM"},

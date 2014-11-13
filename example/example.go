@@ -35,57 +35,91 @@ var ntables = flag.Int("t", 8, "tables")
 var nbuckets = flag.Int("b", 10, "buckets")
 var nslots = flag.Int("s", 8, "slots")
 var ntrials = flag.Int("nt", 100, "number of trials")
-var ibase = flag.Int("base", 0, "base of fill series")
+var ibase = flag.Int("base", 1, "base of fill series, -1 for random")
 var maxLevel = flag.Int("l", 2, "max level")
 var lf = flag.Float64("lf", 0.96, "maximum load factor")
 var flf = flag.Float64("flf", 1.0, "fill load factor")
 
 var mr int
 
-func _fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, r bool) (percent float64, base, max int, failed bool) {
-	/// base = 0
-	if ibase == 0 {
-		if r {
-			base = rbetween(1, 1<<29)
+func Verify(c *cuckoo.Cuckoo, base, n int) bool {
+	//fmt.Printf("Verify: base=%d, n=%d \n", base, n)
+	cnt := 0
+	for i := base; i < base + n; i++ {
+		cnt++
+		v, ok := c.Lookup(cuckoo.Key(i))
+		if !ok {
+			fmt.Printf("Verify: lookup FAILED i=%d, cnt=%d\n", i, cnt)
+			return false
 		}
+		//fmt.Printf("Verify: check i=%d, cnt=%d == v=%d\n", i, cnt, uint32(v))
+		if uint32(cnt) != uint32(v) {
+			fmt.Printf("Verify: FAIL i=%d, cnt=%d != v=%d\n", i, cnt, uint32(v))
+			return false
+		}
+	}
+	//fmt.Printf("Verify: OK\n")
+	return true
+}
+
+type FillStats struct {
+	Load		float64
+	Base		int
+	Total 		int
+	Thresh		int
+	Used		int
+	Remaining	int
+	Failed		bool
+}
+
+func _fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, r bool) *FillStats {
+	var fs FillStats
+
+	base := 0
+	if r {
+		base = rbetween(1, 1<<29)
 	} else {
 		base = ibase
 	}
+	fs.Base = base
+	fs.Total = tables * buckets * slots
 	amt := float64(tables * buckets * slots)
 	amt *= *flf
-	max = int(amt)
-	amax := base + int(amt)
+	max := int(amt)
+	fs.Thresh = max
+	amax := base + max
 	//fmt.Printf("_fill: base=%d, max=%d\n", base, max)
-	percent = float64(1.0)
+	fs.Load = float64(1.0)
 	cnt := 1
 	if verbose {
-		fmt.Printf("_fill: base=%d, n=%d\n", base+1, amax - base)
+		fmt.Printf("_fill: base=%d, n=%d\n", base, max)
 	}
 	svi := amax
 	level := 0
-	for i := base+1; i <= amax; i++ {
+	for i := base; i < amax; i++ {
+		//fmt.Printf("%d\n", i)
 		ok, l := c.Insert(cuckoo.Key(i), cuckoo.Value(uint32(cnt)))
 		level = l
 		if !ok {
-			percent = float64(c.Inserts)/float64(c.Elements)
 			if true {
-				//fmt.Printf("\nFill: failed @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n", i, max, max - i, c.Bumps, c.Inserts, c.Elements, percent, level, float64(c.Bumps)/float64(c.Inserts))
+				fmt.Printf("\nFill: failed @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n", i, max, max - i, c.Bumps, c.Inserts, c.Elements, fs.Load, level, float64(c.Bumps)/float64(c.Inserts))
 			}
-			max = i - 1
-			failed = true
-			svi = i -1
+			fs.Used = i - 1
+			fs.Failed = true
+			svi = i
 			break
 		} else {
 			//fmt.Printf("%d ", level)
 		}
 		cnt++
 	}
+	fs.Load = float64(c.Elements)/float64(c.Size)
 	if verbose {
-		remain := amax - svi
+		fs.Remaining = amax - svi
 		fmt.Printf("\nFill: fail=%v @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, bpi=%0.2f\n",
-			failed, svi, amax, amax - svi, c.Bumps, c.Inserts, c.Elements, percent, float64(c.Bumps)/float64(c.Inserts))
-		if remain > mr {
-			mr = remain
+			fs.Failed, svi, amax, amax - svi, c.Bumps, c.Inserts, c.Elements, fs.Load, float64(c.Bumps)/float64(c.Inserts))
+		if fs.Remaining > mr {
+			mr = fs.Remaining
 		}
 	}
 	//fmt.Printf("\n")
@@ -95,17 +129,17 @@ func _fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, r bool)
 
 	//avg := tot / float64(trials)
 	//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d, avg=%0.2f\n", tables, buckets, slots, trials, avg)
-	return percent, base, max, failed
+	return &fs
 }
 
-func fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, r bool) (percent float64, base, max int, failed bool) {
-	percent, base, max, failed = _fill(c, tables, buckets, slots, ibase, verbose, r)
+func fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, r bool) *FillStats {
+	fs := _fill(c, tables, buckets, slots, ibase, verbose, r)
 	if verbose {
 		for k, v := range c.TableStats {
 			fmt.Printf("table[%d]: %d/%d=%0.4f\n", k, v.Elements, v.Size, float64(v.Elements)/float64(v.Size))
 		}
 	}
-	return
+	return fs
 }
 
 func delete(c *cuckoo.Cuckoo, base, n int, verbose bool) bool {
@@ -118,7 +152,20 @@ func delete(c *cuckoo.Cuckoo, base, n int, verbose bool) bool {
 	return true
 }
 
-func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (avg float64, max int, fails int) {
+func statAdd(tot, add *cuckoo.CuckooStat) {
+	tot.Elements += add.Elements
+	tot.Inserts += add.Inserts
+	tot.Attempts += add.Attempts
+	tot.Deletes += add.Deletes
+	tot.Lookups += add.Lookups
+	tot.Bumps += add.Bumps
+	tot.Aborts += add.Aborts
+}
+
+func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (cs *cuckoo.CuckooStat, avg float64, rmax int, fails int) {
+	var acs cuckoo.CuckooStat
+
+	cs = &acs
 	durations := make([]time.Duration, 5)
 	labels := []string{"init", "fill", "verify", "delete", "verify"}
 	tot := float64(0)
@@ -126,37 +173,44 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 	for t := 0; t < trials; t++ {
 		start := time.Now()
 		c := cuckoo.New(tables, buckets, slots, lf)
+		fmt.Printf("trials size=%h\n", c.Size * c.BucketSize)
 		stop := time.Now()
 		durations[0] = tdiff(start, stop)
 
 		start = time.Now()
-		percent, base, amax, failed := fill(c, tables, buckets, slots, ibase, verbose, r)
+		fs := fill(c, tables, buckets, slots, ibase, verbose, r)
+		fmt.Printf("cf=%#v\n", c.Config)
+		fmt.Printf("cs=%#v\n", c.CuckooStat)
+		fmt.Printf("fs=%#v\n", fs)
 		stop = time.Now()
-		max = amax
+		fmt.Printf("c.CuckooStat=%#v\n", c.CuckooStat)
+		rmax = fs.Thresh
 		durations[1] = tdiff(start, stop)
 
-		tot += percent
-		if failed {
+		tot += fs.Load
+		if fs.Failed {
 			fails++
 		}
 
 		start = time.Now()
-		c.Verify(base+1, max - base)
+		Verify(c, fs.Base, c.Elements)
 		stop = time.Now()
 		durations[2] = tdiff(start, stop)
 
 		start = time.Now()
-		ok := delete(c, base+1, max - base, verbose)
+		ok := delete(c, fs.Base, c.Elements, verbose)
 		if !ok {
 			panic("delete failed")
 		}
 		stop = time.Now()
 		durations[3] = tdiff(start, stop)
 
+		statAdd(cs, &c.CuckooStat)
+
 		// print information about operational rates
 		if verbose {
 			for k, v := range labels {
-				f2 := hrff.Float64{float64(max) * (float64(time.Second) / float64(durations[k])), "ops/sec"}
+				f2 := hrff.Float64{float64(fs.Used) * (float64(time.Second) / float64(durations[k])), "ops/sec"}
 				fmt.Printf("%s: %v %h\n", v, durations[k], f2)
 			}
 			fmt.Printf("\n")
@@ -196,7 +250,7 @@ func main () {
     		for t := 1; t <= *ntables; t++ {
     			for s := 1; s <= *nslots; s++ {
 					//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d\n", t, b, s, *ntrials)
-    				avg, _, f := trials(t, b, s, *ntrials, *lf, 0, *verbose, *ranb)
+    				_, avg, _, f := trials(t, b, s, *ntrials, *lf, 0, *verbose, *ranb)
     				fails += f
  					//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d\n", t, b, s, *ntrials)
     				if avg > maxAvg {
@@ -211,8 +265,9 @@ func main () {
     	}
     } else {
     	tot := *ntables * *nbuckets * *nslots
-		avg, max, fails := trials(*ntables, *nbuckets, *nslots, *ntrials, *lf, *ibase, *verbose, *ranb)
+		cs, avg, max, fails := trials(*ntables, *nbuckets, *nslots, *ntrials, *lf, *ibase, *verbose, *ranb)
 		fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, avg=%0.4f\n", *ntables, *nbuckets, *nslots, tot, max, *ntrials, fails, avg)
+		fmt.Printf("cs=%#v\n", cs)
 		fmt.Printf("mr=%d\n", mr)
 	}
 }

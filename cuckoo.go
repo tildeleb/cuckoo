@@ -10,6 +10,9 @@ import "encoding/binary"
 import "leb/cuckoo/murmur3"
 import "unsafe"
 
+var StartLevel = 100 // was 3
+var LowestLevel = -8000
+
 var zeroVal Value
 
 type bucket struct {
@@ -22,6 +25,7 @@ type CuckooStat struct {
 	Elements		int				// number of elements in the table
 	Inserts			int
 	Attempts		int
+	Iterations		int
 	Deletes			int
 	Lookups			int
 	Fails			int
@@ -37,7 +41,7 @@ type TableStat struct {
 	Bumps		int
 }
 
-// Per table stats
+// xxx
 type Config struct {
 	LoadFactor		float64
 	Tables			int
@@ -101,7 +105,7 @@ func New(tables, buckets, slots int, loadFactor float64, emptyKey ...Key) *Cucko
 	}
 	c.r = rand.Float64
 	c.Size = tables * buckets * slots
-	c.BucketSize = unsafe.Sizeof(b)
+	c.BucketSize = int(unsafe.Sizeof(b))
 	c.LoadFactor = loadFactor
 	c.MaxElements = int(float64(c.Size) * loadFactor)
 	//c.stash = make([]bucket, 8)
@@ -122,6 +126,7 @@ func New(tables, buckets, slots int, loadFactor float64, emptyKey ...Key) *Cucko
 	}
 	return c
 }
+
 
 func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 	buf := new(bytes.Buffer)
@@ -291,8 +296,14 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 			calcHashes(k)
 			//fmt.Printf("insert: level=%d, new key=%d, val=%d\n", level, k, v)
 		}
+		c.Iterations++
 		level--
-		if level <= -8000 {
+
+		// skip 0 because it's used as a signal that Insert failed because of load constaint
+		if level == 0 {
+			level = -1
+		}
+		if level <= LowestLevel {
 			fmt.Printf("cukcoo: Insert FAILED")
 			return false
 		}
@@ -313,7 +324,7 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 	//fmt.Printf("Insert: level=%d, key=%d, value=%d\n", level, key, val)
 	if c.Elements >= c.MaxElements {
 		c.Limited = true
-		return false, level
+		return false, 0
 	}
 	if key == c.emptyKey {
 		if c.emptyKeyValid {
@@ -332,10 +343,8 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 	return aok, level
 }
 
-var MaxLevel = 100 // was 3
-
 func (c *Cuckoo) Insert(key Key, val Value) (ok bool, rlevel int) {
-	return c.insert(key, val, MaxLevel)
+	return c.insert(key, val, StartLevel)
 }
 
 /*

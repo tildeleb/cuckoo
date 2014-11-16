@@ -107,7 +107,7 @@ func _fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, printLe
 	svi := amax
 	lowestLevel := 1<<31
 	for i := base; i < amax; i++ {
-		//fmt.Printf("%d\n", i)
+		fmt.Printf("%d\n", i)
 		ok, l := c.Insert(cuckoo.Key(i), cuckoo.Value(uint32(cnt)))
 		if  l < lowestLevel && l != 0 {
 			lowestLevel = l
@@ -200,6 +200,8 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 	for t := 0; t < trials; t++ {
 		start := time.Now()
 		c := cuckoo.New(tables, buckets, slots, lf)
+			c.StartLevel = *startLevel
+    		c.LowestLevel = *lowLevel
 		stop := time.Now()
 		if t == 0 {
 			sz := hrff.Int64{int64(c.Size * c.BucketSize), "bytes"}
@@ -302,8 +304,6 @@ func main () {
     	}
     } else {
     	tot := *ntables * *nbuckets * *nslots
-    	cuckoo.StartLevel = *startLevel
-    	cuckoo.LowestLevel = *lowLevel
 		cs, avg, max, fails := trials(*ntables, *nbuckets, *nslots, *ntrials, *lf, *ibase, *verbose, *ranb)
 		fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, avg=%0.4f\n", *ntables, *nbuckets, *nslots, tot, max, *ntrials, fails, avg)
 		fmt.Printf("trials: cs=%#v\n", cs)

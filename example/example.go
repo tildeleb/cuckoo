@@ -33,8 +33,6 @@ func tdiff(begin, end time.Time) time.Duration {
 }
 
 var auto = flag.Bool("a", false, "automatic")
-var verbose = flag.Bool("v", false, "verbose")
-var pl = flag.Bool("pl", false, "print level of each insert")
 var ranf = flag.Bool("rr", true, "random run")
 var ranb = flag.Bool("rb", false, "random base")
 var ntables = flag.Int("t", 8, "tables")
@@ -46,6 +44,10 @@ var startLevel = flag.Int("sl", 100, "starting level")
 var lowLevel = flag.Int("ll", -8000, "lowest level")
 var lf = flag.Float64("lf", 0.96, "maximum load factor")
 var flf = flag.Float64("flf", 1.0, "fill load factor")
+
+var pl = flag.Bool("pl", false, "print level of each insert")
+var ps = flag.Bool("ps", false, "print summary for each trail")
+var verbose = flag.Bool("v", false, "verbose")
 
 
 var mr int
@@ -96,18 +98,19 @@ func _fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, printLe
 	amt := float64(tables * buckets * slots)
 	amt *= *flf
 	max := int(amt)
+	fs.Used = max
 	fs.Thresh = max
 	amax := base + max
 	//fmt.Printf("_fill: base=%d, max=%d\n", base, max)
 	fs.Load = float64(1.0)
 	cnt := 1
 	if verbose {
-		fmt.Printf("_fill: base=%d, n=%d\n", base, max)
+		fmt.Printf("    fill: base=%d, n=%d\n", base, max)
 	}
 	svi := amax
 	lowestLevel := 1<<31
 	for i := base; i < amax; i++ {
-		fmt.Printf("%d\n", i)
+		//fmt.Printf("%d\n", i)
 		ok, l := c.Insert(cuckoo.Key(i), cuckoo.Value(uint32(cnt)))
 		if  l < lowestLevel && l != 0 {
 			lowestLevel = l
@@ -117,7 +120,7 @@ func _fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, printLe
 				if printLevels {
 					fmt.Printf("%d\n", l)
 				}
-				fmt.Printf("_fill: failed @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n", i, max, max - i, c.Bumps, c.Inserts, c.Elements, fs.Load, l, float64(c.Bumps)/float64(c.Inserts))
+				fmt.Printf("    fill: failed @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n", i, max, max - i, c.Bumps, c.Inserts, c.Elements, fs.Load, l, float64(c.Bumps)/float64(c.Inserts))
 			}
 			fs.Used = i - base
 			fs.Failed = true
@@ -134,7 +137,7 @@ func _fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, printLe
 	fs.Load = float64(c.Elements)/float64(c.Size)
 	fs.Remaining = amax - svi
 	if verbose {
-		fmt.Printf("_fill: fail=%v @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, bpi=%0.2f\n",
+		fmt.Printf("    fill: fail=%v @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, bpi=%0.2f\n",
 			fs.Failed, svi, amax, amax - svi, c.Bumps, c.Inserts, c.Elements, fs.Load, float64(c.Bumps)/float64(c.Inserts))
 	}
 	if fs.Remaining > mr {
@@ -161,7 +164,7 @@ func fill(c *cuckoo.Cuckoo, tables, buckets, slots, ibase int, verbose, r bool) 
 	fs := _fill(c, tables, buckets, slots, ibase, verbose, *pl, r)
 	if verbose {
 		for k, v := range c.TableStats {
-			fmt.Printf("fill: table[%d]: %d/%d=%0.4f\n", k, v.Elements, v.Size, float64(v.Elements)/float64(v.Size))
+			fmt.Printf("    fill: table[%d]: %d/%d=%0.4f\n", k, v.Elements, v.Size, float64(v.Elements)/float64(v.Size))
 		}
 	}
 	return fs
@@ -185,73 +188,104 @@ func statAdd(tot, add *cuckoo.CuckooStat) {
 	tot.Lookups += add.Lookups
 	tot.Bumps += add.Bumps
 	tot.Aborts += add.Aborts
+	tot.Iterations += add.Iterations
+	tot.Fails += add.Fails
+	tot.BucketSize = add.BucketSize
 }
 
 
 func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (cs *cuckoo.CuckooStat, avg float64, rmax int, fails int) {
 	var acs cuckoo.CuckooStat
+	var labels = []string{"init", "fill", "verify", "delete", "verify"}
+	var durations = make([]time.Duration, 5)
+
+	var print = func(i, used int) {
+		if verbose {
+			tmp := labels[i]
+			f2 := hrff.Float64{float64(used) * (float64(time.Second) / float64(durations[i])), "ops/sec"}
+			fmt.Printf("    %s: %v %h\n", tmp, durations[i], f2)
+		}
+	}
 
 	ll = *startLevel
 	cs = &acs
-	durations := make([]time.Duration, 5)
-	labels := []string{"init", "fill", "verify", "delete", "verify"}
+
 	tot := float64(0)
 	fails = 0
 	for t := 0; t < trials; t++ {
+		// init
+		//fmt.Printf("trials: init\n")
 		start := time.Now()
 		c := cuckoo.New(tables, buckets, slots, lf)
-			c.StartLevel = *startLevel
-    		c.LowestLevel = *lowLevel
+		c.StartLevel = *startLevel
+    	c.LowestLevel = *lowLevel
 		stop := time.Now()
 		if t == 0 {
 			sz := hrff.Int64{int64(c.Size * c.BucketSize), "bytes"}
 			fmt.Printf("trials: size=%h\n", sz)
 		}
 		durations[0] = tdiff(start, stop)
+		print(0, tables * buckets * slots,)
 
+		// fill
+		//fmt.Printf("trials: fill\n")
 		start = time.Now()
 		fs := fill(c, tables, buckets, slots, ibase, verbose, r)
 		stop = time.Now()
-		if verbose {
-			fmt.Printf("trials: cf=%#v\n", c.Config)
-			fmt.Printf("trials: cs=%#v\n", c.CuckooStat)
-			fmt.Printf("trials: fs=%#v\n", fs)
-			fmt.Printf("trials: c.CuckooStat=%#v\n", c.CuckooStat)
-		}
 		bpi := float64(c.Bumps)/float64(c.Inserts)
 		api := float64(c.Attempts)/float64(c.Inserts)
 		ipi := float64(c.Iterations)/float64(c.Inserts)
-		fmt.Printf("trials: trial=%d, Remaining=%d, Aborts=%d, LowestLevel=%d, bpi=%0.2f, api=%0.2f, ipi=%0.2f\n", t, fs.Remaining, c.Aborts, fs.LowestLevel, bpi, api, ipi)
 
 		rmax = fs.Thresh
 		durations[1] = tdiff(start, stop)
+		print(1, fs.Used)
 
 		tot += fs.Load
 		if fs.Failed {
 			fails++
 		}
 
+		// verify
+		//fmt.Printf("trials: verify base=%d, n=%d\n", fs.Base, c.Elements)
 		start = time.Now()
 		Verify(c, fs.Base, c.Elements)
 		stop = time.Now()
 		durations[2] = tdiff(start, stop)
+		print(2, fs.Used)
+		savElements := c.Elements
 
+		// delete
+		//fmt.Printf("trials: delete\n")
 		start = time.Now()
 		ok := delete(c, fs.Base, c.Elements, verbose)
-		if !ok {
+		if !ok || c.Elements != 0 {
 			panic("delete failed")
 		}
 		stop = time.Now()
 		durations[3] = tdiff(start, stop)
+		print(3, fs.Used)
 
+		c.Elements = savElements
 		statAdd(cs, &c.CuckooStat)
 
 		// print information about operational rates
-		if verbose {
+		if false {
 			for k, v := range labels {
 				f2 := hrff.Float64{float64(fs.Used) * (float64(time.Second) / float64(durations[k])), "ops/sec"}
 				fmt.Printf("    %s: %v %h\n", v, durations[k], f2)
 			}
+			fmt.Printf("\n")
+		}
+		if verbose {
+			fmt.Printf("trials: cf=%#v\n", c.Config)
+			fmt.Printf("trials: cs=%#v\n", c.CuckooStat)
+			fmt.Printf("trials: fs=%#v\n", fs)
+			fmt.Printf("trials: c.CuckooStat=%v\n", c.CuckooStat)
+		}
+		if *ps {
+			fmt.Printf("trials: trial=%d, Remaining=%d, Aborts=%d, LowestLevel=%d, bpi=%0.2f, api=%0.2f, ipi=%0.2f\n", t, fs.Remaining, c.Aborts, fs.LowestLevel, bpi, api, ipi)
+		}
+		if verbose {
 			fmt.Printf("\n")
 		}
 	}
@@ -304,10 +338,15 @@ func main () {
     	}
     } else {
     	tot := *ntables * *nbuckets * *nslots
-		cs, avg, max, fails := trials(*ntables, *nbuckets, *nslots, *ntrials, *lf, *ibase, *verbose, *ranb)
+		c, avg, max, fails := trials(*ntables, *nbuckets, *nslots, *ntrials, *lf, *ibase, *verbose, *ranb)
+		bpi := float64(c.Bumps)/float64(c.Inserts)
+		api := float64(c.Attempts)/float64(c.Inserts)
+		ipi := float64(c.Iterations)/float64(c.Inserts)
+
 		fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, avg=%0.4f\n", *ntables, *nbuckets, *nslots, tot, max, *ntrials, fails, avg)
-		fmt.Printf("trials: cs=%#v\n", cs)
-		fmt.Printf("trials: mr=%d\n", mr)
-		fmt.Printf("trials: ll=%d\n", ll)
+		fmt.Printf("trials: Aborts=%d, bpi=%0.2f, api=%0.2f, ipi=%0.2f\n", c.Aborts, bpi, api, ipi)
+		fmt.Printf("trials: MaxRemaining=%d\n", mr)
+		fmt.Printf("trials: LowestLevel=%d\n", ll)
+		fmt.Printf("trials: c=%#v\n", c)
 	}
 }

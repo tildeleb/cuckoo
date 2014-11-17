@@ -11,7 +11,7 @@ import "leb/cuckoo/murmur3"
 import "unsafe"
 
 var grow bool = true
-var normal bool = true
+var normal bool = false
 
 var zeroKey	Key
 var zeroVal Value
@@ -98,9 +98,9 @@ func (c *Cuckoo) addHash() {
 	c.hf = append(c.hf, getHash(c.HashName, int(c.seeds[len(c.seeds) - 1])))
 	c.hs = append(c.hs, 0)
 	c.TableStats = append(c.TableStats, TableStat{Size: c.Buckets * c.Slots})
-	fmt.Printf("c.seeds=%#v\n", c.seeds)
-	fmt.Printf("c.hf=%#v\n", c.hf)
-	fmt.Printf("c.TableStats=%#v\n", c.TableStats)
+	//fmt.Printf("c.seeds=%#v\n", c.seeds)
+	//fmt.Printf("c.hf=%#v\n", c.hf)
+	//fmt.Printf("c.TableStats=%#v\n", c.TableStats)
 /*
 	if len(c.seeds) > 1 {
 		c.seeds[0], c.seeds[len(c.seeds) - 1] = c.seeds[len(c.seeds) - 1], c.seeds[0]
@@ -359,7 +359,7 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 			level = -1
 		}
 		if level <= c.LowestLevel {
-			fmt.Printf("cukcoo: Insert FAILED")
+			fmt.Printf("cukcoo: Insert FAILED, val=%v, key=%v\n", k, v)
 			return false
 		}
 		if level <= 0 {
@@ -378,28 +378,30 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 
 	// function starts here
 	//fmt.Printf("Insert: level=%d, key=%d, value=%d\n", level, key, val)
+	k = key
+	v = val
 again:
 	if c.Elements >= c.MaxElements {
-		fmt.Printf("insert: limited\n")
+		//fmt.Printf("insert: limited\n")
 		c.Limited = true
 		return false, 0
 	}
-	if key == c.emptyKey {
+	if k == c.emptyKey {
 		if c.emptyKeyValid {
 			panic("emptyKeyValid")
 		} else {
 			c.Elements++
 			c.emptyKeyValid = true
-			c.emptyValue = val
+			c.emptyValue = v
 		}
 		return true, level
 	}
-	aok := ins(key, val)
+	aok := ins(k, v)
 	if aok {
 		c.Inserts++
 	} else {
 		if grow {
-			fmt.Printf("insert: add a table, level=%d\n", level)
+			fmt.Printf("insert: add a table, level=%d, key=%v, val=%v\n", level, k, v)
 			c.addTable(0)
 			goto again
 		}

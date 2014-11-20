@@ -8,6 +8,7 @@ import "bytes"
 import "math/rand"
 import "encoding/binary"
 import "leb/cuckoo/murmur3"
+import "leb/cuckoo/primes"
 import "unsafe"
 
 var grow bool = true
@@ -16,7 +17,7 @@ var normal bool = false
 var zeroKey	Key
 var zeroVal Value
 
-type bucket struct {
+type Bucket struct {
 	key		Key
 	val		Value
 }
@@ -32,6 +33,8 @@ type CuckooStat struct {
 	Fails			int
 	Bumps			int
 	Aborts			int
+	MaxAttempts		int
+	MaxIterations	int
 	Limited			bool
 }
 
@@ -46,7 +49,7 @@ type TableStat struct {
 const InitialStartLevel = 2000
 const InitialLowestLevel = -8000
 type Config struct {
-	LoadFactor		float64
+	MaxLoadFactor	float64
 	StartLevel		int
 	LowestLevel		int
 	Tables			int
@@ -58,13 +61,14 @@ type Config struct {
 }
 
 type Cuckoo struct {
-	tbs				[][][]bucket	// alignment lives here, your data stored here.
+	tbs				[][]Buckets		// alignment lives here, your data stored here.
 	Config							// config data
 	CuckooStat						// stats
 	TableStats		[]TableStat		// per table stats
 	seeds			[]uint32		// seeds used per table
 	hf				[]hash.Hash32	// one for each table + the last one reserved for fingerprints
 	hs				[]uint32		// hash sums for each table and fingerprint
+	b				[]byte
 	//stash			[]bucket		// store keys that fail insert
 	r				func() float64	// random numbers for eviction
 	emptyKey		Key				// empty key
@@ -113,12 +117,14 @@ func (c *Cuckoo) addHash() {
 func (c *Cuckoo) addTable(growFactor int) {
 	c.Tables++
 	c.Size = c.Tables * c.Buckets * c.Slots
-	c.MaxElements = int(float64(c.Size) * c.LoadFactor)
-	newTable := make([][]bucket, c.Buckets, c.Buckets)
+	c.MaxElements = int(float64(c.Size) * c.MaxLoadFactor)
+	newTable := make([]Buckets, c.Buckets, c.Buckets)
 	for b, _ := range newTable {
-		newTable[b] = make([]bucket, c.Slots, c.Slots)
-		for s, _ := range newTable[b] {
-			newTable[b][s].val = 0
+		if len(newTable[b]) == 0 {
+			newTable[b] = makeSlots(newTable[b], c.Slots)
+			for s, _ := range newTable[b] {
+				newTable[b][s].val = 0
+			}
 		}
 	}
 	c.tbs = append(c.tbs, newTable)
@@ -127,16 +133,21 @@ func (c *Cuckoo) addTable(growFactor int) {
 }
 
 
-func New(tables, buckets, slots int, loadFactor float64, emptyKey ...Key) *Cuckoo {
-	var b bucket
+func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
+	var b Bucket
 
 	c := &Cuckoo{}
+	if buckets < 0 {
+		pbuckets := primes.NextPrime(-buckets)
+		//fmt.Printf("buckets=%d, pbuckets=%d\n", buckets, pbuckets)
+		buckets = pbuckets
+	}
 	c.Tables, c.Buckets, c.Slots =  tables, buckets, slots
 	c.StartLevel, c.LowestLevel = InitialStartLevel, InitialLowestLevel
 	c.Size = tables * buckets * slots
-	c.LoadFactor = loadFactor
-	c.HashName = "m332"
-	c.MaxElements = int(float64(c.Size) * c.LoadFactor)
+	c.MaxLoadFactor = loadFactor
+	c.HashName = hashName // "m332"
+	c.MaxElements = int(float64(c.Size) * c.MaxLoadFactor)
 	if len(emptyKey) > 0 {
 		c.emptyKey = emptyKey[0]
 	}
@@ -144,7 +155,8 @@ func New(tables, buckets, slots int, loadFactor float64, emptyKey ...Key) *Cucko
 	c.r = rand.Float64
 	c.BucketSize = int(unsafe.Sizeof(b))
 	c.TableStats = make([]TableStat, tables)
-	c.tbs = make([][][]bucket, tables, tables)
+
+	c.b = make([]byte, 4) // ???
 
 	c.seeds = make([]uint32, tables, tables)
 	c.seeds = c.seeds[0:0]
@@ -158,18 +170,27 @@ func New(tables, buckets, slots int, loadFactor float64, emptyKey ...Key) *Cucko
 	}
 	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 	//fmt.Printf("c.hf=%#v\n", c.hf)
+	//fmt.Printf("c.Config=%#v\n", c.Config)
 
+	// init the table
+	c.tbs = make([][]Buckets, tables, tables)
 	for t, _ := range c.tbs {
-		c.tbs[t] = make([][]bucket, buckets, buckets)
+		c.tbs[t] = make([]Buckets, buckets, buckets)
 		c.TableStats[t].Size = buckets * slots
 		for b, _ := range c.tbs[t] {
-			c.tbs[t][b] = make([]bucket, slots, slots)
+			c.tbs[t][b] = makeSlots(c.tbs[t][b], slots)
+			//c.tbs[t][b] = make(Buckets, slots, slots)
+			// the following not needed
 			for s, _ := range c.tbs[t][b] {
 				c.tbs[t][b][s].val = 0
 			}
 		}
 	}
 	return c
+}
+
+func (c *Cuckoo) LoadFactor() float64 {
+	return float64(c.Elements) / float64(c.Size)
 }
 
 func (c *Cuckoo) SetStartLevel(sl int) {
@@ -180,8 +201,38 @@ func (c *Cuckoo) SetLowestLevel(ll int) {
 	c.LowestLevel = ll
 }
 
+func  (c *Cuckoo) calcHashes(key Key) {
+	if normal {
+		buf := new(bytes.Buffer)
+		//b := make([]byte, 4)
+		err := binary.Write(buf, binary.LittleEndian, int32(key))
+		if err != nil {
+			//fmt.Printf("Write: err=%q\n", err)
+			panic("Insert: binary.Write")
+		}
+		if l, err2 := buf.Read(c.b); l != 4 {
+			fmt.Printf("l=%d, err=%q\n", l, err2)
+			panic("Insert: Read")
+		}
+	} else {
+		c.b[0], c.b[1], c.b[2], c.b[3] = byte(key&0xFF), byte((key>>8)&0xFF), byte((key>>16)&0xFF), byte((key>>24)&0xFF)
+	}
+	// calculate hashes for each table
+	for k, v := range c.hf {
+		if false {
+			v.Reset()
+			v.Write(c.b)
+			h1 := v.Sum32()
+			c.hs[k] = h1 % uint32(c.Buckets)
+			//fmt.Printf("c.hs[%d]=0x%x, Sum32(b)=0x%x\n", k, h1, murmur3.Sum32(b, c.seeds[k]))
+		} else {
+			c.hs[k] = murmur3.Sum32(c.b, c.seeds[k]) % uint32(c.Buckets)
+		}
+		//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
+	}
+}
 
-func (c *Cuckoo) Lookup(key Key) (Value, bool) {
+/*
 	buf := new(bytes.Buffer)
 	b := make([]byte, 4)
 	err := binary.Write(buf, binary.LittleEndian, int32(key))
@@ -193,6 +244,20 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 		fmt.Printf("l=%d, err=%q\n", l, err2)
 		panic("Lookup: Read")
 	}
+
+	c.calcHashes(key)
+	// calculate hashes for each table
+	for k, v := range c.hf {
+		v.Reset()
+		v.Write(b)
+		c.hs[k] = v.Sum32() % uint32(c.Buckets)
+		//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
+	}
+
+
+*/
+
+func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 	c.Lookups++
 
 	if key == c.emptyKey {
@@ -203,15 +268,9 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 		}
 	}
 
-	// calculate hashes for each table
-	for k, v := range c.hf {
-		v.Reset()
-		v.Write(b)
-		c.hs[k] = v.Sum32() % uint32(c.Buckets)
-		//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
-	}
+	c.calcHashes(key)
 	for t, _ := range c.tbs {
-		b := c.hs[t]
+		b := c.hs[t] % uint32(c.Buckets)
 		for s, _ := range c.tbs[t][b] {
 			//fmt.Printf("Lookup: key=%d, table=%d, bucket=%d, slot=%d, found key=%d\n", key, t, b, s, c.tbs[t][b][s].key)
 			if c.tbs[t][b][s].key == key {
@@ -223,7 +282,7 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 	return zeroVal, false
 }
 
-func (c *Cuckoo) Delete(key Key) (bool, Value) {
+/*
 	buf := new(bytes.Buffer)
 	b := make([]byte, 4)
 	err := binary.Write(buf, binary.LittleEndian, int32(key))
@@ -235,16 +294,6 @@ func (c *Cuckoo) Delete(key Key) (bool, Value) {
 		fmt.Printf("Delete: l=%d, err=%q\n", l, err2)
 		panic("Delete: Read")
 	}
-	c.Deletes++
-
-	if key == c.emptyKey {
-		if c.emptyKeyValid {
-			c.emptyKeyValid = false
-			return true, c.emptyValue
-		} else {
-			return false, zeroVal
-		}
-	}
 
 	// calculate hashes for each table
 	for k, v := range c.hf {
@@ -253,6 +302,24 @@ func (c *Cuckoo) Delete(key Key) (bool, Value) {
 		c.hs[k] = v.Sum32() % uint32(c.Buckets)
 		//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
 	}
+*/
+
+func (c *Cuckoo) Delete(key Key) (bool, Value) {
+	c.Deletes++
+
+	//fmt.Printf("key=%v, c.emptyKey=%v\n", key, c.emptyKey)
+	if key == c.emptyKey {
+		if c.emptyKeyValid {
+			c.Elements--
+			c.emptyKeyValid = false
+			return true, c.emptyValue
+		} else {
+			//fmt.Printf("Delete: can't find emptyKey %v\n", key)
+			return false, zeroVal
+		}
+	}
+
+	c.calcHashes(key)
 	for t, _ := range c.tbs {
 		b := c.hs[t]
 		for s, _ := range c.tbs[t][b] {
@@ -269,6 +336,7 @@ func (c *Cuckoo) Delete(key Key) (bool, Value) {
 			}
 		}
 	}
+	//fmt.Printf("Delete: can't find %v\n", key)
 	return false, zeroVal
 }
 
@@ -276,7 +344,6 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 	var k Key
 	var v Value
 
-	b := make([]byte, 4)
 	var ins func(kx Key, vx Value) bool // forwqrd declare the closure so we can call it recursively
 	var _ = func() {
 		fmt.Printf("<")
@@ -288,38 +355,8 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 		}
 		fmt.Printf(">\n")
 	}
-	var calcHashes = func(key Key) {
-		if normal {
-			buf := new(bytes.Buffer)
-			//b := make([]byte, 4)
-			err := binary.Write(buf, binary.LittleEndian, int32(key))
-			if err != nil {
-				//fmt.Printf("Write: err=%q\n", err)
-				panic("Insert: binary.Write")
-			}
-			if l, err2 := buf.Read(b); l != 4 {
-				fmt.Printf("l=%d, err=%q\n", l, err2)
-				panic("Insert: Read")
-			}
-		} else {
-			b[0], b[1], b[2], b[3] = byte(key&0xFF), byte((key>>8)&0xFF), byte((key>>16)&0xFF), byte((key>>24)&0xFF)
-		}
-		// calculate hashes for each table
-		for k, v := range c.hf {
-			if true {
-				v.Reset()
-				v.Write(b)
-				h1 := v.Sum32()
-				c.hs[k] = h1 % uint32(c.Buckets)
-				//fmt.Printf("c.hs[%d]=0x%x, Sum32(b)=0x%x\n", k, h1, murmur3.Sum32(b, c.seeds[k]))
-			} else {
-				c.hs[k] = murmur3.Sum32(b, c.seeds[k]) % uint32(c.Buckets)
-			}
-			//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
-		}
-	}
 	ins = func(kx Key, vx Value) bool {
-		calcHashes(kx)
+		c.calcHashes(kx)
 		//fmt.Printf("Insert: level=%d, key=%d, ", level, kx)
 		//phv()
 		k = kx // was :=
@@ -330,15 +367,18 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 			//fmt.Printf("Insert: next table, level=%d, key=%d, value=%d, table=%d, bucket=%d\n", level, k, v, t, b)
 			for s, _ := range c.tbs[t][b] {
 				c.Attempts++
-				if c.tbs[t][b][s].key == 0 {
+				pk := c.tbs[t][b][s].key
+				if  pk == c.emptyKey || pk == k  {	// added replacement semantics
 					c.tbs[t][b][s].key, c.tbs[t][b][s].val = k, v
-					//fmt.Printf("Insert: level=%d, key=%d, value=%d, table=%d, bucket=%d, slot=%d\n", level, k, v, t, b, s)
+					if pk == k {
+						//fmt.Printf("Insert: level=%d, pk=%d, key=%d, value=%d, table=%d, bucket=%d, slot=%d\n", level, pk, k, v, t, b, s)
+					}
 					c.Elements++
 					c.TableStats[t].Elements++
 					return true
 				}
 			}
-			// no slots available in any table available, pick a random key to move to the next table
+			// no slots available in this table available, pick a random key to move to the next table
 			c.Bumps++
 			c.TableStats[t].Bumps++
 			victim := c.rbetween(0, c.Slots-1)
@@ -348,9 +388,11 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 			c.tbs[t][b][victim].val = v
 			k = bucket.key
 			v = bucket.val
-			calcHashes(k)
+			c.calcHashes(k)
 			//fmt.Printf("insert: level=%d, new key=%d, val=%d\n", level, k, v)
 		}
+		// could not find any space for key in any table moving left to right
+		// try again starting with leftmost table
 		c.Iterations++
 		level--
 
@@ -380,9 +422,10 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 	//fmt.Printf("Insert: level=%d, key=%d, value=%d\n", level, key, val)
 	k = key
 	v = val
+	sva, svi := c.Attempts, c.Iterations
 again:
 	if c.Elements >= c.MaxElements {
-		//fmt.Printf("insert: limited\n")
+		//fmt.Printf("insert: limited at %v\n", key)
 		c.Limited = true
 		return false, 0
 	}
@@ -406,6 +449,13 @@ again:
 			goto again
 		}
 	}
+	if c.Attempts - sva > c.MaxAttempts {
+		c.MaxAttempts = c.Attempts - sva
+	}
+	if c.Iterations - svi > c.MaxIterations {
+		c.MaxIterations = c.Iterations - svi
+	}
+	//fmt.Printf("%d/%d ", c.Attempts - sva, c.Iterations - svi)
 	return aok, level
 }
 

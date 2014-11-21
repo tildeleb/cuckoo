@@ -12,7 +12,8 @@ var Ll int
 
 // basic data structures methods and a method to get stats, what do we do about level?
 type DSTest interface {
-	Insert(key Key, value Value) (ok bool, level int)
+	Insert(key Key, value Value) (ok bool)
+	InsertL(key Key, value Value) (ok bool, rlevel int)
 	Lookup(key Key) (v Value, ok bool)
 	Delete(key Key) (bool, Value)
 	GetStat(stat string) int
@@ -28,27 +29,6 @@ func rbetween(a int, b int) int {
 	//	fmt.Printf("rbetween: a=%d, b=%d, rf=%f, diff=%f, r2=%f, r3=%f\n", a, b, rf, diff, r2, r3)
 	ret := int(r3)
 	return ret
-}
-
-// test lookup by looking for a sequence of keys and making sure the values match the keys
-func Verify(d DSTest, base, n int) bool {
-	//fmt.Printf("Verify: base=%d, n=%d \n", base, n)
-	cnt := 0
-	for i := base; i < base + n; i++ {
-		cnt++
-		v, ok := d.Lookup(Key(i))
-		if !ok {
-			fmt.Printf("Verify: lookup FAILED i=%d, cnt=%d\n", i, cnt)
-			return false
-		}
-		//fmt.Printf("Verify: check i=%d, cnt=%d == v=%d\n", i, cnt, uint32(v))
-		if uint32(cnt) != uint32(v) {
-			fmt.Printf("Verify: FAIL i=%d, cnt=%d != v=%d\n", i, cnt, uint32(v))
-			return false
-		}
-	}
-	//fmt.Printf("Verify: OK\n")
-	return true
 }
 
 // return information about what happened during a fill
@@ -90,7 +70,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	lowestLevel := 1<<31
 	for i := base; i < amax; i++ {
 		//fmt.Printf("%d\n", i)
-		ok, l := d.Insert(Key(i), Value(uint32(cnt)))
+		ok, l := d.InsertL(Key(i), Value(uint32(cnt)))
 		if  l < lowestLevel && l != 0 {
 			lowestLevel = l
 		}
@@ -151,6 +131,27 @@ func Fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pl 
 	}
 */
 	return fs
+}
+
+// test lookup by looking for a sequence of keys and making sure the values match the keys
+func Verify(d DSTest, base, n int) bool {
+	//fmt.Printf("Verify: base=%d, n=%d \n", base, n)
+	cnt := 0
+	for i := base; i < base + n; i++ {
+		cnt++
+		v, ok := d.Lookup(Key(i))
+		if !ok {
+			fmt.Printf("Verify: lookup FAILED i=%d, cnt=%d\n", i, cnt)
+			return false
+		}
+		//fmt.Printf("Verify: check i=%d, cnt=%d == v=%d\n", i, cnt, uint32(v))
+		if uint32(cnt) != uint32(v) {
+			fmt.Printf("Verify: FAIL i=%d, cnt=%d != v=%d\n", i, cnt, uint32(v))
+			return false
+		}
+	}
+	//fmt.Printf("Verify: OK\n")
+	return true
 }
 
 func Delete(d DSTest, base, n int, verbose bool) bool {

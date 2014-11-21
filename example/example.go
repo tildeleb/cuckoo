@@ -76,6 +76,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		//fmt.Printf("trials: init\n")
 		start := time.Now()
 		c := cuckoo.New(tables, buckets, slots, lf, *hash)
+		c.SetNumericKeySize(4) //  XXXX
 		c.StartLevel = *startLevel
     	c.LowestLevel = *lowLevel
 		stop := time.Now()

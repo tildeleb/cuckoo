@@ -7,21 +7,27 @@
 Cuckoo Hash Tables
 ==================
 
-This package is an implementation of a Cuckoo Hashtable. A Cuckoo Hashtable has multiple hash tables with each table having buckets and each bucket having slots.
+This package is an implementation of a Cuckoo Hash Table. [^1] A Cuckoo Hashtable is similar to Go's builtin map but uses multiple hash tables with a random walk slot eviction strategy when hashing conflicts occur. A hash table is comprised of buckets and each bucket can have multiple slots. Each slot contains a key/value pair.
 
-Load factors as high as .999 are achievable with the caveat that the amount of work per insertion increases as the hash table fills up. The amount of work can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
+*The package is is 100% written in Go with no external dependencies.*
+
+Load factors as high as .999 are achievable with the caveat that the amount of work per insertion increases as the hash table fills up (load factor increases). The amount of work can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
 
 In this implementation there are three ways to reduce the probability of running into a pathological case:
 
-1. Set the number of hash tables to a number greater than 2 helps (4 is a good number)
-2. Set the number of slots per bucket (again, 4, 8, or 16 are good numbers)
-3. Reduce the load factor
+1. Set the number of slots per bucket (again, 4, 8, or 16 are good numbers)
+2. Set the number of hash tables to a number greater than 2 helps (4 is a good number)
+3. Reduce the load factor  
 
-An example testing program is included which easily allows one to qucikly try out new combinations and test them. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
+Slots are a very effective way of achieving high load factors efficiently. Adding hash tables is not nearly as efficient as more hashes per insert need to be calculated.
+
+The implementation keeps a number of counters that can be used to derive statistics about how well the implementation is performing. I could not have easily developed the package with the counters.
+
+An example  program is included which easily allows one to qucikly try out new combinations of parameters and explore the results. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
 
 Benchmarks
 ----------
-The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. The cuckoo configuration is 2 hash tables with 8 slots per bucket with the array optimization. Another optimization is turned on to marshall 32 bit quantities more efficiently that using the binary package.
+The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. The Cuckoo Hashtable configuration is 2 hash tables with 8 slots per bucket along with the array optimization. Another optimization is turned on that marshals numeric quantities (currently 32 bit only) more efficiently than using the binary package.
 
 	leb@hula:~/gotest/src/leb/cuckoo % go test -bench=. -v
 	=== RUN TestMemoryEfficiency-11
@@ -41,7 +47,7 @@ The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. Th
 
 Benchmarks Discussion
 ---------------------
-For the case "var map[uint32]uint32 you can see that the Cuckoo Hash uses 5X less memory than Go's builtin map and does so while achieving a load factor of 99% with a bit less efficiency. Again the Cuckoo Hash for this example uses 2 hash tables and each bucket has 8 slots. From a performance standpoint the Cuckoo hash achieves 296 ns/op on Inserts vs 219 ns/op for the build-in map. Much of this overhead has comes from calculating 2 hashes per insert.
+For the case "var map[uint32]uint32 Cuckoo Hash uses 5X less memory than Go's builtin map and does so while achieving a load factor of 99% with a bit less efficiency. Again the Cuckoo Hash for this example uses 2 hash tables and each bucket has 8 slots. From a performance standpoint the Cuckoo hash achieves 296 ns/op on Inserts vs 219 ns/op for the build-in map. Much of this overhead has comes from calculating 2 hashes per insert.
 
 Selectable Hash Functions
 -------------------------
@@ -49,12 +55,18 @@ The hash function used by this package can be selected. Currently the only hash 
 
 Defining Your Own Key/Value Types
 ---------------
-The package supports almost any kind of key and value type by simply creating a new "kvt" file. You are welcome to edit the file "kvt_default.go" and change the definitions for Key and Value.
+The package supports almost any kind of key and value type by simply creating a new "kvt" file. The file "kvt_default.go" can be edited to change the definitions for Key and Value.
 
 
 Support for Arrays or Slices via Build Tags
 ------------------------------------------
-You can also choose if you wants slots implemented via slices or arrays. Slices are not very efficient but you can try out new sizes without having to edit a file. Arrays are more efficient wither cpu or memory wise because they are not a reference type so there is the overhead of an 8 byte pointer on a 64 bit system and the cache miss(es) that go along with that pointer dereference.
+The package has an optimization to implement slots as either slices or arrays. Slices allow the number of slots to be selected at runtime but the slice overhead per bucket is high. Therefore, once the number of slots is known, it's best to switch to a static array size. 
+
+[fix]
+
+Slices are not very efficient but you can try out new sizes without having to edit a file.
+Arrays are more efficient wither cpu or memory wise because they are not a reference type so there is the overhead of an 8 byte pointer on a 64 bit system and the cache miss(es) that go along with that pointer dereference.
+
 
 As an example here is a file "kvt_uint32_uint32_slice.go" that defines a "uint32" key, a "uint32" value, and a uses slices.
 	
@@ -177,4 +189,11 @@ Implementation FAQ
 
 **Q**: You mention large datasets but this version uses a 32 bit hash?  
 **A**: Right. This version uses a 32 bit murmur 3 hash which supports a hash table with 4G buckets. Assuming 4 slots per bucket that's 16G entries. Currently enough for what I need. a 64 bit version will be forthcoming as will versions that use different hash functions.
+
+**Q**: Why is Delete so slow?  
+**A**: Essentially because Delete has to look is t * s places to find the key whereas Go's build in map only has to look in a single place. In the example benchmarks t == 2 and s == 8 so s * t == 16. Therefor on average Delete has to do 8 lookups to find the key. The speed of Delete can be increased by decreasing the number of slots and tables.
+
+References
+----------
+[^1]: [21] R. Pagh and F. Rodler. Cuckoo hashing. Journal of Algorithms,51(2):122–144, May 2004.
 

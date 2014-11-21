@@ -11,7 +11,7 @@ This package is an implementation of a Cuckoo Hash Table. [^1] A Cuckoo Hashtabl
 
 *The package is is 100% written in Go with no external dependencies.*
 
-Load factors as high as .999 are achievable with the caveat that the amount of work per insertion increases as the hash table fills up (load factor increases). The amount of work can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
+Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
 
 In this implementation there are three ways to reduce the probability of running into a pathological case:
 

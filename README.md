@@ -7,45 +7,54 @@
 Cuckoo Hash Tables
 ==================
 
-This package is an implementation of a three dimensional cuckoo hash table. In concrete terms the three dimensions are hash tables, buckets, and slots. Load factors as high as .999 are achievable with the caveat that the amount of work per insertion increases as the hash table fills up. The amount of work can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are subject to pathological cases (cycles) that can prevent an insert from completing. In this implementation there are three ways to reduce the probability of running into a pathological case:
+This package is an implementation of a Cuckoo Hashtable. A Cuckoo Hashtable has multiple hash tables with each table having buckets and each bucket having slots.
+
+Load factors as high as .999 are achievable with the caveat that the amount of work per insertion increases as the hash table fills up. The amount of work can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
+
+In this implementation there are three ways to reduce the probability of running into a pathological case:
 
 1. Set the number of hash tables to a number greater than 2 helps (4 is a good number)
 2. Set the number of slots per bucket (again, 4, 8, or 16 are good numbers)
 3. Reduce the load factor
 
-If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
-
 An example testing program is included which easily allows one to qucikly try out new combinations and test them. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
 
 Benchmarks
 ----------
-	leb@hula:~/gotest/src/leb/cuckoo % go test -tags="kuint32 vuint32 array" -bench=. -v
+The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. The cuckoo configuration is 2 hash tables with 8 slots per bucket with the array optimization. Another optimization is turned on to marshall 32 bit quantities more efficiently that using the binary package.
+
+	leb@hula:~/gotest/src/leb/cuckoo % go test -bench=. -v
 	=== RUN TestMemoryEfficiency-11
-	--- PASS: TestMemoryEfficiency-11 (2.03 seconds)
-		cuckoo_test.go:62: Cuckoo Hash LoadFactor:       0.99
-		cuckoo_test.go:63: Cuckoo Hash memory allocated: 15 MiB
-		cuckoo_test.go:64: Go map memory allocated:      75 MiB
+	--- PASS: TestMemoryEfficiency-11 (1.43 seconds)
+		cuckoo_test.go:71: Cuckoo Hash LoadFactor:       0.99
+		cuckoo_test.go:72: Cuckoo Hash memory allocated: 15 MiB
+		cuckoo_test.go:73: Go map memory allocated:      75 MiB
 	PASS
-	BenchmarkCuckooInsert2Tables2Slots-11	10000000	       242 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkCuckooSearch2Tables2Slots-11	10000000	       197 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkCuckooInsert4Tables4Slots-11	 5000000	       467 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkCuckooSearch4Tables4Slots-11	10000000	       250 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkGoMapInsert-11	 5000000	       246 ns/op	      18 B/op	       0 allocs/op
-	BenchmarkGoMapSearch-11	20000000	       133 ns/op	       0 B/op	       0 allocs/op
-	ok  	leb/cuckoo	25.414s
+	BenchmarkCuckoo2T2SInsert-11	 5000000	       296 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkCuckoo2T2SSearch-11	 5000000	       290 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkCuckoo2T2SDelete-11	10000000	       332 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkGoMapInsert-11	10000000	       219 ns/op	       9 B/op	       0 allocs/op
+	BenchmarkGoMapSearch-11	20000000	       140 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkGoMapDelete-11	50000000	        28.4 ns/op	       0 B/op	       0 allocs/op
+	ok  	leb/cuckoo	30.475s
 	leb@hula:~/gotest/src/leb/cuckoo % 
 
 Benchmarks Discussion
 ---------------------
-For the case "var map[uint32]uint32 you can see that the Cuckoo Hash uses 5X less memory than the build in Go map and does so while achieving a load factor of 99%. The Cuckoo Hash for this example uses 4 hash tables and each bucket has 4 slots. From a performance standpoint the Cuckoo hash achieves 395 ns/op on Inserts vs 216 ns/op for the build-in map which is almost twice as slow. Most of this overhead has comes from calculating 4 hashes per insert. This is supported by the benchmark for the 2 hash table 2 slot Cucko Hash whose Insert performance is 228 ns/op which is basically the same as the built in map.
+For the case "var map[uint32]uint32 you can see that the Cuckoo Hash uses 5X less memory than Go's builtin map and does so while achieving a load factor of 99% with a bit less efficiency. Again the Cuckoo Hash for this example uses 2 hash tables and each bucket has 8 slots. From a performance standpoint the Cuckoo hash achieves 296 ns/op on Inserts vs 219 ns/op for the build-in map. Much of this overhead has comes from calculating 2 hashes per insert.
 
 Selectable Hash Functions
 -------------------------
-The hash function used by this package can be selected. Currently the only hash function supported is Murmur 3 with a 32 bit output or "m332"
+The hash function used by this package can be selected. Currently the only hash function supported is Murmur 3 with a 32 bit output or "m332" however support for many other hash functions is planned for a future commit.
 
-Key/Value Types and Arrays and Slices supported via Build Tags
---------------------------------------------------------------
-The package supports almost any kind of key and value type by simply creating a new "kvt" file. You can also choose if you wants slots implemented via slices or arrays. Slices are not very efficient but you can try out new sizes without having to edit a file. Arrays are more efficient wither cpu or memory wise because they are not a reference type so there is the overhead of an 8 byte pointer on a 64 bit system and the cache miss(es) that go along with that pointer dereference.
+Defining Your Own Key/Value Types
+---------------
+The package supports almost any kind of key and value type by simply creating a new "kvt" file. You are welcome to edit the file "kvt_default.go" and change the definitions for Key and Value.
+
+
+Support for Arrays or Slices via Build Tags
+------------------------------------------
+You can also choose if you wants slots implemented via slices or arrays. Slices are not very efficient but you can try out new sizes without having to edit a file. Arrays are more efficient wither cpu or memory wise because they are not a reference type so there is the overhead of an 8 byte pointer on a 64 bit system and the cache miss(es) that go along with that pointer dereference.
 
 As an example here is a file "kvt_uint32_uint32_slice.go" that defines a "uint32" key, a "uint32" value, and a uses slices.
 	
@@ -146,7 +155,6 @@ Now let's look at cuckoo table can support a load factor of 99.9%, albeit with s
 The key number to look at here is the api which has moved from 1.20 on the classic hash table to a 15.20 here. Note that the hash algorithm has to try 15 locations on average to insert a key.
 
 
-
 Implementation
 --------------
 This version of a cuckoo hash table implements a three dimensional hash table. In concrete terms we have "t" hash tables, each has tables has "b" buckets, and each bucket has "s" slots. Total entries is simply t * b * s. In practical terms t can range from 2 to 4 and maybe as high as 8 and slots can range from 1 to 8 and maybe as high as 16 or 32. Access to slots is fast because the pre-fetcher gets them into the L1 cache. The number of buckets should be a prime number. Within reason slots are more efficient execution time wise then hash tables, so prefer slots to tables. For expositional purpose consider hash tables laid out in left to right order.
@@ -158,3 +166,15 @@ The evicted key and it's value are  then attempted to be stored in the next hash
 The entire procedure is repeated until the end of the left to right hash tables is reached. again for a her specified number of iterations. When the number of iterations has expired (== 0) the algorithm goes into recovery mode, where instead of trying to insert a value it tries to get the value to be inserted back as the value to be inserted. This isn't alway possible in which case data loss happens.
 
 Cuckoo tables are know for the efficiency. Go to the example and ty 
+
+Implementation FAQ
+------------------
+**Q**: Why do you use mod instead of power of two tables with a bit mask for bucket indexing?  
+**A**: I am interested in working with large datasets. The optimization of using power of two table sizes is known to me but it doesn't scale to large datasets. e.g. if I have a 16 GiB entry dataset and it grows y one more I will need a 32 GiB allocation and waste 16 GiB.
+
+**Q**: Don't you know mod is slow?  
+**A**: Sure but see above.
+
+**Q**: You mention large datasets but this version uses a 32 bit hash?  
+**A**: Right. This version uses a 32 bit murmur 3 hash which supports a hash table with 4G buckets. Assuming 4 slots per bucket that's 16G entries. Currently enough for what I need. a 64 bit version will be forthcoming as will versions that use different hash functions.
+

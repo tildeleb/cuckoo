@@ -10,6 +10,7 @@ import "runtime"
 import "testing"
 
 var r = rand.Float64
+var b = int(0)
 var n = int(2e6)
 const hashName = "m332"
 
@@ -21,7 +22,7 @@ type KeySet struct {
 }
 var ks *KeySet
 
-func CreateKeysValuesMap(n int) *KeySet {
+func CreateKeysValuesMap(b, n int) *KeySet {
 	var v Value
     var msb, msa runtime.MemStats
     var ks KeySet
@@ -31,7 +32,7 @@ func CreateKeysValuesMap(n int) *KeySet {
 
 	runtime.ReadMemStats(&msb)
 	ks.M = make(map[Key]Value)
-	for i := 0; i < n; i++ {
+	for i := b; i < b + n; i++ {
 		k := Key(rand.Uint32())
 		ks.M[k] = v
 		ks.Keys[i] = k
@@ -44,32 +45,37 @@ func CreateKeysValuesMap(n int) *KeySet {
 
 
 func init() {
-	ks = CreateKeysValuesMap(n)
+	ks = CreateKeysValuesMap(b, n)
 }
 
+const ef = 1.0
+const add = 32.0
+const lf = 0.99
+const tables = 2
+const slots = 8
 
 func TestMemoryEfficiency(t *testing.T) {
-	const ef = 1.0
-	const lf = 0.99
-	const tables = 4
-	const slots = 4
     var msb, msa runtime.MemStats
 
-    runtime.ReadMemStats(&msb)
-	c := New(tables, -int(float64(n)*ef+32.0)/(tables * slots), slots, lf, hashName)
-    for k, v := range ks.M {
-            c.Insert(k, v)
-    }
-    runtime.ReadMemStats(&msa)
+	runtime.ReadMemStats(&msb)
+	c := New(tables, -int(float64(n)*ef+add)/(tables * slots), slots, lf, hashName)
+	if c == nil {
+		t.Logf("New failed probably because slots don't match")
+		t.FailNow()
+	}
+	for k, v := range ks.M {
+		c.Insert(k, v)
+	}
+	runtime.ReadMemStats(&msa)
 
-    t.Logf("Cuckoo Hash LoadFactor:       %0.2f", c.LoadFactor())
-    t.Logf("Cuckoo Hash memory allocated: %0.0f MiB", float64(msa.Alloc - msb.Alloc)/float64(1<<20))
-    t.Logf("Go map memory allocated:      %0.0f MiB", float64(ks.AllocBytes)/float64(1<<20))
+	t.Logf("Cuckoo Hash LoadFactor:       %0.2f", c.LoadFactor())
+	t.Logf("Cuckoo Hash memory allocated: %0.0f MiB", float64(msa.Alloc - msb.Alloc)/float64(1<<20))
+	t.Logf("Go map memory allocated:      %0.0f MiB", float64(ks.AllocBytes)/float64(1<<20))
 }
 
 
 func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	//fmt.Printf("BenchmarkCuckooInsert: N=%d, ef=%f, add=%f, lf=%f, tables=%d, slots=%d\n", b.N, ef, add, lf, tables, slots)
+	//t.Logf("BenchmarkCuckooInsert: N=%d, ef=%f, add=%f, lf=%f, tables=%d, slots=%d\n", b.N, ef, add, lf, tables, slots)
 	c := New(tables, -int(float64(b.N)*ef+add)/(tables * slots), slots, lf, hash)
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -81,7 +87,6 @@ func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, 
 
 
 func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	//c := New(tables, -int(float64(b.N)*ef+32.0)/(tables * slots), slots, lf)
 	c := New(tables, -int(float64(b.N)*ef+add)/(tables * slots), slots, lf, hash)
 	for i := 0; i < len(ks.Keys); i++ {
 		c.Insert(ks.Keys[i%n], ks.Vals[i%n])
@@ -95,7 +100,6 @@ func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, 
 }
 
 func benchmarkCuckooDelete(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	//c := New(tables, -int(float64(b.N)*ef+32.0)/(tables * slots), slots, lf)
 	c := New(tables, -int(float64(b.N)*ef+add)/(tables * slots), slots, lf, hash)
 	for i := 0; i < len(ks.Keys); i++ {
 		c.Insert(ks.Keys[i%n], ks.Vals[i%n])
@@ -108,25 +112,32 @@ func benchmarkCuckooDelete(ef, add, lf float64, tables, slots int, hash string, 
 	}
 }
 
-func BenchmarkCuckooInsert2Tables2Slots(b *testing.B) {
-	benchmarkCuckooInsert(1.2, 32.0, 0.80, 2, 2, "m332", b)
+
+func BenchmarkCuckoo2T2SInsert(b *testing.B) {
+	benchmarkCuckooInsert(ef, add, lf, tables, slots, "m332", b)
 }
 
-
-func BenchmarkCuckooSearch2Tables2Slots(b *testing.B) {
-	benchmarkCuckooSearch(1.2, 32.0, 0.80, 2, 2, "m332", b)
+func BenchmarkCuckoo2T2SSearch(b *testing.B) {
+	benchmarkCuckooSearch(ef, add, lf, tables, slots, "m332", b)
 }
 
-
-func BenchmarkCuckooInsert4Tables4Slots(b *testing.B) {
-	benchmarkCuckooInsert(1.2, 32.0, 0.99, 4, 4, "m332", b)
+func BenchmarkCuckoo2T2SDelete(b *testing.B) {
+	benchmarkCuckooDelete(ef, add, lf, tables, slots, "m332", b)
 }
 
-
-func BenchmarkCuckooSearch4Tables4Slots(b *testing.B) {
-	benchmarkCuckooSearch(1.2, 32.0, 0.99, 4, 4, "m332", b)
+/*
+func BenchmarkCuckoo4T4SInsert(b *testing.B) {
+	benchmarkCuckooInsert(1.0, 32.0, 0.99, 4, 4, "m332", b)
 }
 
+func BenchmarkCuckoo4T4SSearch(b *testing.B) {
+	benchmarkCuckooSearch(1.0, 32.0, 0.99, 4, 4, "m332", b)
+}
+
+func BenchmarkCuckoo4T4SDelete(b *testing.B) {
+	benchmarkCuckooDelete(1.0, 32.0, 0.99, 4, 4, "m332", b)
+}
+*/
 
 func BenchmarkGoMapInsert(b *testing.B) {
 	m := make(map[Key]Value)
@@ -150,6 +161,20 @@ func BenchmarkGoMapSearch(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_, _ = m[ks.Keys[i%n]]
+	}
+}
+
+func BenchmarkGoMapDelete(b *testing.B) {
+	m := make(map[Key]Value)
+
+	for i := 0; i < len(ks.Keys); i++ {
+		m[ks.Keys[i%n]] = ks.Vals[i%n]
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		delete(m, ks.Keys[i%n])
 	}
 }
 

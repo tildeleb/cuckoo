@@ -77,6 +77,21 @@ type Cuckoo struct {
 	ekiz			bool			// empty key is zero
 }
 
+func (c *Cuckoo) GetStat(s string) int {
+	switch s {
+	case "bumps":
+		return c.Bumps
+	case "inserts":
+		return c.Inserts
+	case "elements":
+		return c.Elements
+	case "size":
+		return c.Size
+	default:
+		panic("GetStat")
+	}
+}
+
 func (c *Cuckoo) rbetween(a int, b int) int {
 	rf := c.r()
 	diff := float64(b - a + 1)
@@ -134,7 +149,11 @@ func (c *Cuckoo) addTable(growFactor int) {
 
 
 func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
-	var b Bucket
+	var b Buckets
+
+	if len(b) != slots {
+		return nil
+	}
 
 	c := &Cuckoo{}
 	if buckets < 0 {

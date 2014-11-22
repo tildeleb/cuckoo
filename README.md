@@ -48,6 +48,18 @@ If the single failure makes you unhappy I suggest you change the number of slots
 	./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true  524.49s user 3.76s system 101% cpu 8:42.49 total
 	leb@hula:~/gotest/src/leb/cuckoo/example % 
 
+How to Build
+------------
+
+1. Edit the file "kv_default.go" and define the types for Key and Value
+2. % go build  
+
+Note the default build uses a slice per bucket to implement slots. This allows for experimentation with the number of slots without recompiling but is inefficient from a memory usage perspective. When the number of slots needed for your application is finalized do the following:
+
+1. Edit "kvt_array.go" and define Slots to be the number of slots needed for your application.
+2. % go build -tags="array"
+
+This will build a version that uses arrays. Calls to cuckoo.New where the number of slots passed in does not match the number specified in "kvt_array.go" will fail.
 
 Benchmarks
 ----------

@@ -35,6 +35,20 @@ Goals
 * User selectable hash functions
 * Focus on 32 bit hash function for first version
 
+Pathological Cases
+------------------
+In the following example a cuckoo hash is constructed and 1 million trials are run doing inserts/verify/delete.. In all but a single case the cuckoo hash was able to achieve a load factor of 1.0, which means that the table was completely full with no collisions. In the single case that failed only a single insert, the final insert, could not be completed. This defines life with a cuckoo table.
+
+If the single failure makes you unhappy I suggest you change the number of slots from 8 to 16 and see how many trials it takes to find a failure.
+
+	leb@hula:~/gotest/src/leb/cuckoo/example % time ./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true
+	trials: size=8 kbytes
+	trials: tables=4, buckets=11, slots=8, size=352, max=352, trials=1000000, fails=1, avg=1.0000
+	trials: MaxRemaining=1, LowestLevel=-168, Aborts=168, bpi=2.15, api=21.68, ipi=0.1618
+	./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true  524.49s user 3.76s system 101% cpu 8:42.49 total
+	leb@hula:~/gotest/src/leb/cuckoo/example % 
+
+
 Benchmarks
 ----------
 The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. The Cuckoo Hashtable configuration is 2 hash tables with 8 slots per bucket along with the array optimization. Another optimization is turned on that marshals numeric quantities (currently 32 bit only) more efficiently than using the binary package.

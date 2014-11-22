@@ -25,6 +25,16 @@ The implementation keeps a number of counters that can be used to derive statist
 
 An example  program is included which easily allows one to qucikly try out new combinations of parameters and explore the results. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
 
+Goals
+-----
+* Allow for many configuration options to explore the design space
+* Production quality code
+* Top notch memory and CPU efficiency within the bounds of pure Go
+* Comprehensive counters to allow for dynamic debugging and statistical analysis
+* Good example program with lots of options to play with parameters
+* User selectable hash functions
+* Focus on 32 bit hash function for first version
+
 Benchmarks
 ----------
 The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. The Cuckoo Hashtable configuration is 2 hash tables with 8 slots per bucket along with the array optimization. Another optimization is turned on that marshals numeric quantities (currently 32 bit only) more efficiently than using the binary package.

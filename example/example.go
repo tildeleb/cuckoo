@@ -41,7 +41,7 @@ var pt = flag.Bool("pt", false, "print summary for each trail")
 var ps = flag.Bool("ps", false, "print stats at the end of all trails")
 var verbose = flag.Bool("v", false, "verbose")
 
-func statAdd(tot, add *cuckoo.CuckooStat) {
+func statAdd(tot, add *cuckoo.Counters) {
 	tot.Elements += add.Elements
 	tot.Inserts += add.Inserts
 	tot.Attempts += add.Attempts
@@ -55,8 +55,8 @@ func statAdd(tot, add *cuckoo.CuckooStat) {
 }
 
 
-func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (cs *cuckoo.CuckooStat, avg float64, rmax int, fails int) {
-	var acs cuckoo.CuckooStat
+func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (cs *cuckoo.Counters, avg float64, rmax int, fails int) {
+	var acs cuckoo.Counters
 	var labels = []string{"init", "fill", "verify", "delete", "verify"}
 	var durations = make([]time.Duration, 5)
 
@@ -133,7 +133,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		print(3, fs.Used)
 
 		c.Elements = savElements
-		statAdd(cs, &c.CuckooStat)
+		statAdd(cs, &c.Counters)
 
 		// print information about operational rates
 		if false {
@@ -145,9 +145,8 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		}
 		if verbose {
 			fmt.Printf("trials: cf=%#v\n", c.Config)
-			fmt.Printf("trials: cs=%#v\n", c.CuckooStat)
+			fmt.Printf("trials: cs=%#v\n", c.Counters)
 			fmt.Printf("trials: fs=%#v\n", fs)
-			fmt.Printf("trials: c.CuckooStat=%#v\n", c.CuckooStat)
 		}
 		if *pt {
 			fmt.Printf("trials: trial=%d, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxAttemps=%d, MaxIterations=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",

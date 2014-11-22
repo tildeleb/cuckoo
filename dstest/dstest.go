@@ -16,7 +16,8 @@ type DSTest interface {
 	InsertL(key Key, value Value) (ok bool, rlevel int)
 	Lookup(key Key) (v Value, ok bool)
 	Delete(key Key) (bool, Value)
-	GetStat(stat string) int
+	GetCounter(stat string) int
+	GetTableCounter(t int, stat string) int
 }
 
 var r = rand.Float64
@@ -77,10 +78,10 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 		if !ok {
 			if verbose {
 				if printLevels {
-					fmt.Printf("%d\n", l)
+					fmt.Printf("%d/%d\n", l, lowestLevel)
 				}
 				fmt.Printf("    fill: failed @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n",
-					i, amax, amax - i, d.GetStat("bumps"), d.GetStat("elements"), d.GetStat("size"), fs.Load, l, float64(d.GetStat("bumps"))/float64(d.GetStat("inserts")))
+					i, amax, amax - i, d.GetCounter("bumps"), d.GetCounter("elements"), d.GetCounter("size"), fs.Load, l, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
 			}
 			fs.Used = i - base
 			fs.Failed = true
@@ -90,16 +91,17 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 		} else {
 			//fmt.Printf("%d\n", i)
 			if printLevels {
-				fmt.Printf("%d ", l)
+				fmt.Printf("%d/%d ", l, lowestLevel)
 			}
 		}
 		cnt++
 	}
-	fs.Load = float64(d.GetStat("elements"))/float64(d.GetStat("size"))
+	fs.LowestLevel = lowestLevel
+	fs.Load = float64(d.GetCounter("elements"))/float64(d.GetCounter("size"))
 	fs.Remaining = amax - svi
 	if verbose {
 		fmt.Printf("    fill: fail=%v @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, bpi=%0.2f\n",
-			fs.Failed, svi, amax, amax - svi, d.GetStat("bumps"), d.GetStat("inserts"), d.GetStat("elements"), fs.Load, float64(d.GetStat("bumps"))/float64(d.GetStat("inserts")))
+			fs.Failed, svi, amax, amax - svi, d.GetCounter("bumps"), d.GetCounter("inserts"), d.GetCounter("elements"), fs.Load, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
 	}
 	if fs.Remaining > Mr {
 		Mr = fs.Remaining
@@ -123,13 +125,11 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 
 func Fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pl bool, r bool) *FillStats {
 	fs := _fill(d, tables, buckets, slots, ibase, flf, verbose, pl, r)
-/*
 	if verbose {
-		for k, v := range c.TableStats {
-			fmt.Printf("    fill: table[%d]: %d/%d=%0.4f\n", k, v.Elements, v.Size, float64(v.Elements)/float64(v.Size))
+		for i := 0; i < tables; i++ {
+			fmt.Printf("    fill: table[%d]: %d/%d=%0.4f\n", i, d.GetTableCounter(i, "elements"), d.GetTableCounter(i, "size"), float64(d.GetTableCounter(i, "elements"))/float64(d.GetTableCounter(i, "size")))
 		}
 	}
-*/
 	return fs
 }
 

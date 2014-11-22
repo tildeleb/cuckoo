@@ -11,7 +11,7 @@ This package is an implementation of a Cuckoo Hash Table. [^1] A Cuckoo Hashtabl
 
 *The package is is 100% written in Go with no external dependencies.*
 
-Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
+Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are also subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
 
 In this implementation there are three ways to reduce the probability of running into a pathological case:
 
@@ -178,6 +178,14 @@ The evicted key and it's value are  then attempted to be stored in the next hash
 The entire procedure is repeated until the end of the left to right hash tables is reached. again for a her specified number of iterations. When the number of iterations has expired (== 0) the algorithm goes into recovery mode, where instead of trying to insert a value it tries to get the value to be inserted back as the value to be inserted. This isn't alway possible in which case data loss happens.
 
 Cuckoo tables are know for the efficiency. Go to the example and ty 
+
+	leb@hula:~/gotest/src/leb/cuckoo/example % time ./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true
+	trials: size=8 kbytes
+	trials: tables=4, buckets=11, slots=8, size=352, max=352, trials=1000000, fails=1, avg=1.0000
+	trials: MaxRemaining=1, LowestLevel=-168, Aborts=168, bpi=2.15, api=21.68, ipi=0.1618
+	./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true  524.49s user 3.76s system 101% cpu 8:42.49 total
+	leb@hula:~/gotest/src/leb/cuckoo/example % 
+
 
 Implementation FAQ
 ------------------

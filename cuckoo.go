@@ -11,8 +11,6 @@ import "leb/cuckoo/murmur3"
 import "leb/cuckoo/primes"
 import "unsafe"
 
-var grow bool = true
-
 var zeroKey	Key
 var zeroVal Value
 
@@ -74,11 +72,12 @@ type Cuckoo struct {
 	emptyValue		Value			// if empty key store value lives here and not in a hash table
 	emptyKeyValid	bool			// something store here
 	ekiz			bool			// empty key is zero
+	grow			bool
 	NumericKeySize	int				// if key is numeric what is size in bytes
 	buf				*bytes.Buffer	// for marshalling data
 }
 
-func (c *Cuckoo) GetStat(s string) int {
+func (c *Cuckoo) GetCounter(s string) int {
 	switch s {
 	case "bumps":
 		return c.Bumps
@@ -89,9 +88,26 @@ func (c *Cuckoo) GetStat(s string) int {
 	case "size":
 		return c.Size
 	default:
-		panic("GetStat")
+		panic("GetCounter")
 	}
 }
+
+func (c *Cuckoo) GetTableCounter(t int, s string) int {
+	if t > len(c.TableStats) {
+		panic("GetTableCounter")
+	}
+	switch s {
+	case "size":
+		return c.TableStats[t].Size
+	case "elements":
+		return c.TableStats[t].Elements
+	case "bumps":
+		return c.TableStats[t].Bumps
+	default:
+		panic("GetTableCounter")
+	}
+}
+
 
 func (c *Cuckoo) rbetween(a int, b int) int {
 	rf := c.r()
@@ -153,7 +169,8 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 	var b Buckets
 	var akey Key
 
-	if len(b) != slots {
+	if len(b) > 0 && len(b) != slots {
+		fmt.Printf("New: slot mismatch compiled slots=%d, requested slots=%d\n", len(b), slots)
 		return nil
 	}
 
@@ -167,6 +184,7 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 	c.b = make([]byte, unsafe.Sizeof(akey), unsafe.Sizeof(akey))
 	c.b = c.b[:]
 	c.buf = new(bytes.Buffer)
+	c.grow = true
 	c.Tables, c.Buckets, c.Slots =  tables, buckets, slots
 	c.StartLevel, c.LowestLevel = InitialStartLevel, InitialLowestLevel
 	c.Size = tables * buckets * slots
@@ -193,7 +211,7 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 	}
 	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 	//fmt.Printf("c.hf=%#v\n", c.hf)
-	//fmt.Printf("c.Config=%#v\n", c.Config)
+	//fmt.Printf("New: c.Config=%#v\n", c.Config)
 
 	// init the table
 	c.tbs = make([][]Buckets, tables, tables)
@@ -226,6 +244,10 @@ func (c *Cuckoo) SetStartLevel(sl int) {
 
 func (c *Cuckoo) SetLowestLevel(ll int) {
 	c.LowestLevel = ll
+}
+
+func (c *Cuckoo) SetGrow(b bool) {
+	c.grow = b
 }
 
 func  (c *Cuckoo) calcHash(hf hash.Hash32, seed uint32, key Key) (h uint32) {
@@ -276,30 +298,6 @@ func  (c *Cuckoo) calcHashes(key Key) {
 	}
 }
 
-/*
-	buf := new(bytes.Buffer)
-	b := make([]byte, 4)
-	err := binary.Write(buf, binary.LittleEndian, int32(key))
-	if err != nil {
-		//fmt.Printf("Write: err=%q\n", err)
-		panic("Lookup: binary.Write")
-	}
-	if l, err2 := buf.Read(b); l != 4 {
-		fmt.Printf("l=%d, err=%q\n", l, err2)
-		panic("Lookup: Read")
-	}
-
-	c.calcHashes(key)
-	// calculate hashes for each table
-	for k, v := range c.hf {
-		v.Reset()
-		v.Write(b)
-		c.hs[k] = v.Sum32() % uint32(c.Buckets)
-		//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
-	}
-
-
-*/
 
 func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 	c.Lookups++
@@ -325,28 +323,6 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 	}
 	return zeroVal, false
 }
-
-/*
-	buf := new(bytes.Buffer)
-	b := make([]byte, 4)
-	err := binary.Write(buf, binary.LittleEndian, int32(key))
-	if err != nil {
-		//fmt.Printf("Write: err=%q\n", err)
-		panic("Delete: binary.Write")
-	}
-	if l, err2 := buf.Read(b); l != 4 {
-		fmt.Printf("Delete: l=%d, err=%q\n", l, err2)
-		panic("Delete: Read")
-	}
-
-	// calculate hashes for each table
-	for k, v := range c.hf {
-		v.Reset()
-		v.Write(b)
-		c.hs[k] = v.Sum32() % uint32(c.Buckets)
-		//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
-	}
-*/
 
 func (c *Cuckoo) Delete(key Key) (bool, Value) {
 	c.Deletes++
@@ -385,7 +361,7 @@ func (c *Cuckoo) Delete(key Key) (bool, Value) {
 	return false, zeroVal
 }
 
-func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
+func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 	var k Key
 	var v Value
 
@@ -441,7 +417,7 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 		c.Iterations++
 		level--
 
-		// skip 0 because it's used as a signal that Insert failed because of load constaint
+		// skip 0 because it's used as a signal that Insert failed because of load factor constraint
 		if level == 0 {
 			level = -1
 		}
@@ -456,7 +432,7 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 			_, found := c.Lookup(key)
 			//fmt.Printf("key %d found=%v\n", key, found)
 			if !found {
-				fmt.Printf("insert: aborted\n")
+				//fmt.Printf("insert: aborted at level=%d, aborts=%d\n", level, c.Aborts)
 				return false
 			}
 		}
@@ -468,9 +444,10 @@ func (c *Cuckoo) insert(key Key, val Value, level int) (ok bool, rlevel int) {
 	k = key
 	v = val
 	sva, svi := c.Attempts, c.Iterations
+	level = ilevel
 again:
 	if c.Elements >= c.MaxElements {
-		//fmt.Printf("insert: limited at %v\n", key)
+		fmt.Printf("insert: limited at %v\n", key)
 		c.Limited = true
 		return false, 0
 	}
@@ -484,11 +461,11 @@ again:
 		}
 		return true, level
 	}
-	aok := ins(k, v)
-	if aok {
+	ok = ins(k, v)
+	if ok {
 		c.Inserts++
 	} else {
-		if grow {
+		if c.grow {
 			fmt.Printf("insert: add a table, level=%d, key=%v, val=%v\n", level, k, v)
 			c.addTable(0)
 			goto again
@@ -501,7 +478,7 @@ again:
 		c.MaxIterations = c.Iterations - svi
 	}
 	//fmt.Printf("%d/%d ", c.Attempts - sva, c.Iterations - svi)
-	return aok, level
+	return
 }
 
 func (c *Cuckoo) Insert(key Key, val Value) (ok bool) {
@@ -510,7 +487,7 @@ func (c *Cuckoo) Insert(key Key, val Value) (ok bool) {
 }
 
 func (c *Cuckoo) InsertL(key Key, val Value) (ok bool, rlevel int) {
-	ok, _ = c.insert(key, val, c.StartLevel)
+	ok, rlevel = c.insert(key, val, c.StartLevel)
 	return
 }
 

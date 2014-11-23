@@ -52,7 +52,7 @@ func New(seed uint32) hash.Hash32 {
 	return d
 }
 
-// The following methods implment the hash.Hash abd hash.Hash32 interfaces
+// The following methods implment the hash.Hash and hash.Hash32 interfaces
 
 // Reset the hash state.
 func (d *Digest) Reset() {

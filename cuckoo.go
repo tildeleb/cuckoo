@@ -12,6 +12,7 @@ import "bytes"
 import "math/rand"
 import "encoding/binary"
 import "leb/cuckoo/murmur3"
+import "leb/cuckoo/jenkins3"
 import "leb/cuckoo/primes"
 import "unsafe"
 
@@ -53,6 +54,8 @@ const (
 	InitialStartLevel = 2000
 	InitialLowestLevel = -8000
 )
+
+// Configuration imfo here.
 type Config struct {
 	MaxLoadFactor	float64	// don't allow more than MaxElements = Tables * Buckets * Slots elements
 	StartLevel		int		// starting value for level which is decremented for each insertion attempt
@@ -65,7 +68,7 @@ type Config struct {
 	HashName		string	// name of hashing function used
 }
 
-// main data structure for cuckoo hash
+// The main data structure for cuckoo hash.
 type Cuckoo struct {
 	tbs				[][]Buckets		// alignment lives here, your data stored here.
 	Config							// config data
@@ -77,6 +80,7 @@ type Cuckoo struct {
 	b				[]byte			// used for result of marshalled data
 	buf				*bytes.Buffer	// for marshalling data
 	r				func() float64	// random numbers for eviction
+	eseed			int64
 	emptyKey		Key				// empty key
 	emptyValue		Value			// if empty key store value lives here and not in a hash table
 	emptyKeyValid	bool			// something store here
@@ -134,6 +138,8 @@ func getHash(hashName string, seed int) hash.Hash32 {
 	switch hashName {
 	case "m332":
 		return murmur3.New(uint32(seed))
+	case "j332":
+		return jenkins3.New(uint32(seed))
 	default:
 		s := fmt.Sprintf("cuckoo: unknown hash function %q\n", hashName)
 		panic(s)
@@ -271,6 +277,23 @@ func (c *Cuckoo) SetGrow(b bool) {
 	c.grow = b
 }
 
+// Set if hash tables can be added dynamically if an insert fails.
+func (c *Cuckoo) SetEvictionSeed(seed int64) {
+	c.eseed = seed
+    rand.Seed(seed)
+}
+
+/*
+    seed := int64(0)
+    // fixed pattern or different values each time
+    if *ranf {
+        seed = time.Now().UTC().UnixNano()
+    } else {
+        seed = int64(0)
+    }
+    rand.Seed(seed)
+*/
+
 // Given key calculate the hash for the specified table
 func  (c *Cuckoo) calcHash(hf hash.Hash32, seed uint32, key Key) (h uint32) {
 	// speed up some common key cases
@@ -297,7 +320,14 @@ func  (c *Cuckoo) calcHash(hf hash.Hash32, seed uint32, key Key) (h uint32) {
 		h = h1 % uint32(c.Buckets)
 		//fmt.Printf("c.hs[%d]=0x%x, Sum32(b)=0x%x\n", k, h1, murmur3.Sum32(b, c.seeds[k]))
 	} else {
-		h = murmur3.Sum32(c.b, seed) % uint32(c.Buckets)
+		switch c.HashName {
+		case "m332":
+			h = murmur3.Sum32(c.b, seed) % uint32(c.Buckets)
+		case "j332":
+			h = jenkins3.Sum32(c.b, seed) % uint32(c.Buckets)
+		default:
+			panic("calcHash: bad hash name")
+		}
 	}
 	return
 }
@@ -475,7 +505,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 	level = ilevel
 again:
 	if c.Elements >= c.MaxElements {
-		fmt.Printf("insert: limited at %v\n", key)
+		//fmt.Printf("insert: limited at %v\n", key)
 		c.Limited = true
 		return false, 0
 	}

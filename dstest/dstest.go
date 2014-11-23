@@ -42,6 +42,7 @@ type FillStats struct {
 	Remaining	int
 	LowestLevel	int
 	Failed		bool
+	Limited		bool
 }
 
 func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, printLevels, r bool) *FillStats {
@@ -76,6 +77,9 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 			lowestLevel = l
 		}
 		if !ok {
+			if l == 0 {
+				fs.Limited = true
+			}
 			if verbose {
 				if printLevels {
 					fmt.Printf("%d/%d\n", l, lowestLevel)

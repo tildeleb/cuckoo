@@ -149,8 +149,8 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 			fmt.Printf("trials: fs=%#v\n", fs)
 		}
 		if *pt {
-			fmt.Printf("trials: trial=%d, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxAttemps=%d, MaxIterations=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",
-				t, fs.Remaining, c.Aborts, fs.LowestLevel, c.MaxAttempts, c.MaxIterations, bpi, api, ipi, float64(c.Elements)/float64(c.Size), c.Elements, c.Size)
+			fmt.Printf("trials: trial=%d, Limited=%v, Failed=%v, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxAttemps=%d, MaxIterations=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",
+				t, fs.Limited, fs.Failed, fs.Remaining, c.Aborts, fs.LowestLevel, c.MaxAttempts, c.MaxIterations, bpi, api, ipi, float64(c.Elements)/float64(c.Size), c.Elements, c.Size)
 		}
 		if verbose {
 			fmt.Printf("\n")

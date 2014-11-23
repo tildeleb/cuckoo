@@ -15,6 +15,7 @@ import "github.com/tildeleb/hrff"
 import "github.com/tildeleb/cuckoo"
 import "github.com/tildeleb/cuckoo/primes"
 import "github.com/tildeleb/cuckoo/dstest"
+import "github.com/tildeleb/cuckoo/siginfo"
 
 func tdiff(begin, end time.Time) time.Duration {
     d := end.Sub(begin)
@@ -126,7 +127,8 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		ok := dstest.Delete(c, fs.Base, c.Elements, verbose)
 		if !ok || c.Elements != 0 {
 			s := fmt.Sprintf("Delete failed ok=%v, c.Elements=%d", ok, c.Elements)
-			panic(s)
+			fmt.Printf(s)
+			//panic(s)
 		}
 		stop = time.Now()
 		durations[3] = tdiff(start, stop)
@@ -161,6 +163,10 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 	return // avg, max, fails
 }
 
+func f() {
+	*pt = !*pt
+}
+
 
 func main () {
 	flag.Parse()
@@ -178,8 +184,8 @@ func main () {
 
     //st := 0
     //ss := 0
+    siginfo.SetHandler(f)
     fails := 0
-
     //verbose := false
     if *ntrials == 1 {
     	*verbose = true

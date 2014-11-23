@@ -1,8 +1,9 @@
 // Copyright © 2014 Lawrence E. Bakst. All rights reserved.
 
-// Package cuckoo implements a cuckoo hash table. With the write options this data structure can achieve 5X more storage efficiency
-// as Go's builtin map with similar performance. See the README.MD file for all the details.
-// Edit the file kv_default.go to 
+// Package cuckoo implements a cuckoo hash table.
+// With the correct options this data structure can achieve 5X more storage efficiency
+// over Go's builtin map with similar performance. See the "README.md" file for all the details.
+// Edit the file "kv_default.go" to define the types for you Key and Value.
 package cuckoo
 
 import "fmt"
@@ -25,7 +26,7 @@ type Bucket struct {
 	val		Value
 }
 
-// Counters
+// Counters. All public but we now have an API to access them.
 type Counters struct {
 	BucketSize		int		// size of a single bucket (1 slot) in bytes
 	Elements		int		// number of elements currently residing in the data structure
@@ -42,7 +43,7 @@ type Counters struct {
 	Limited			bool	// were inserts limited by a load factor
 }
 
-// Per table stats
+// Per table stats, again all public.
 type TableCounters struct {
 	Size			int		// c.Buckets * c.Slots
 	Elements		int		// number of elements currently residing in this hash table
@@ -55,7 +56,8 @@ const (
 	InitialLowestLevel = -8000
 )
 
-// Configuration imfo here.
+// Configuration info for the cucko hash is collected in this structure.
+// All fields are exported/public.
 type Config struct {
 	MaxLoadFactor	float64	// don't allow more than MaxElements = Tables * Buckets * Slots elements
 	StartLevel		int		// starting value for level which is decremented for each insertion attempt
@@ -69,6 +71,7 @@ type Config struct {
 }
 
 // The main data structure for cuckoo hash.
+// Most fields are private but the counters are public.
 type Cuckoo struct {
 	tbs				[][]Buckets		// alignment lives here, your data stored here.
 	Config							// config data
@@ -136,7 +139,7 @@ func (c *Cuckoo) rbetween(a int, b int) int {
 // Select a hash function.
 func getHash(hashName string, seed int) hash.Hash32 {
 	switch hashName {
-	case "m332":
+	case "m332", "":
 		return murmur3.New(uint32(seed))
 	case "j332":
 		return jenkins3.New(uint32(seed))
@@ -183,7 +186,11 @@ func (c *Cuckoo) addTable(growFactor int) {
 	// perhaps reset the stats ???
 }
 
-// Create a new cuckoo hash.
+// Create a new cuckoo hash of size  = tables * buckets * slots.
+// Don't allow more than size * loadFactor elements to be stored.
+// Use hashName as the hash function.
+// If specified, use emptyKey as the key that signifies that an element is unused.
+// However, usually the default, the Go zero initization, is what you want.
 func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
 	var b Buckets
 	var akey Key

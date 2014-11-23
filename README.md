@@ -1,17 +1,15 @@
-**Under Active Development**
-============================
+*Under Active Development*
 
-**"A total work in progress at this point in time" –– leb**
-==========================================
+<img src="http://clipart.coolclips.com/100/wjm/tf05110/CoolClips_hous1343.jpg"></img>
 
 Cuckoo Hash Tables
 ==================
 
 This package is an implementation of a Cuckoo Hash Table. [^1] A Cuckoo Hashtable is similar to Go's builtin map but uses multiple hash tables with a random walk slot eviction strategy when hashing conflicts occur. A hash table is comprised of buckets and each bucket can have multiple slots. Each slot contains a key/value pair.
 
-*The package is is 100% written in Go with no external dependencies.*
+Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both.
 
-Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both. Cuckoo hash tables are also subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
+Additionally, Cuckoo Hash Tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
 
 In this implementation there are three ways to reduce the probability of running into a pathological case:
 
@@ -25,6 +23,17 @@ The implementation keeps a number of counters that can be used to derive statist
 
 An example  program is included which easily allows one to qucikly try out new combinations of parameters and explore the results. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
 
+Status
+------
+*The package is is 100% written in Go with no external dependencies.*  
+*The code should currently be considered alpha quality.*
+
+Future Development
+------------------
+* 64 bit hash functions
+* More hash functions like CityHash, SIPHash, and others
+* More test cases
+
 Goals
 -----
 * Allow for many configuration options to explore the design space
@@ -34,6 +43,7 @@ Goals
 * Good example program with lots of options to play with parameters
 * User selectable hash functions
 * Focus on 32 bit hash function for first version
+* Support for non power of two table size and therefore the use of mod to calculate a bucket index.
 
 Pathological Cases
 ------------------
@@ -236,6 +246,10 @@ Implementation FAQ
 
 **Q**: Why is Delete so slow?  
 **A**: Essentially because Delete has to look is t * s places to find the key whereas Go's build in map only has to look in a single place. In the example benchmarks t == 2 and s == 8 so s * t == 16. Therefor on average Delete has to do 8 lookups to find the key. The speed of Delete can be increased by decreasing the number of slots and tables.
+
+**Q**: Why isn't there a stash?  
+**A**: I read the Microsoft paper and wasn't impresses. Adding a stash is like adding a bag to the design. In order to guarantee insert doesn't fail we just add another hash table if needed. Adding a stash buffer would add a parallel data structure and code to manipulate it in Insert, Delete, and Lookup. 
+
 
 References
 ----------

@@ -12,9 +12,9 @@ import "time"
 import "flag"
 import "math/rand"
 import "github.com/tildeleb/hrff"
-import "leb/cuckoo"
-import "leb/cuckoo/primes"
-import "leb/cuckoo/dstest"
+import "github.com/tildeleb/cuckoo"
+import "github.com/tildeleb/cuckoo/primes"
+import "github.com/tildeleb/cuckoo/dstest"
 
 func tdiff(begin, end time.Time) time.Duration {
     d := end.Sub(begin)

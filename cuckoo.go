@@ -11,9 +11,9 @@ import "hash"
 import "bytes"
 import "math/rand"
 import "encoding/binary"
-import "leb/cuckoo/murmur3"
-import "leb/cuckoo/jenkins3"
-import "leb/cuckoo/primes"
+import "github.com/tildeleb/cuckoo/murmur3"
+import "github.com/tildeleb/cuckoo/jenkins3"
+import "github.com/tildeleb/cuckoo/primes"
 import "unsafe"
 
 var zeroKey	Key

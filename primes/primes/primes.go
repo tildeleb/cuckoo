@@ -3,7 +3,7 @@ package main
 import "flag"
 import "fmt"
 import "strconv"
-import "leb/cuckoo/primes"
+import "github.com/tildeleb/cuckoo/primes"
 
 func main() {
 	flag.Parse()

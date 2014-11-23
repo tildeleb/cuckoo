@@ -1,9 +1,8 @@
 // Copyright © 2014 Lawrence E. Bakst. All rights reserved.
-package jenkins3
 
 // This package is a transliteration of Jenkins lookup3.c
 
-
+package jenkins3
 import (
 	_ "fmt"
 	"hash"
@@ -30,13 +29,13 @@ var (
 	_ hash.Hash32 = new(Digest)
 )
 
-func hashword(k []uint32, length int, seed uint32) uint32 {
+func hashwords(k []uint32, length int, seed uint32) uint32 {
 	var a, b, c uint32
 	var rot = func(x, k uint32) uint32 {
 		return x << k | x >> (32 - k)
 	}
 	var mix = func() {
-		a -= c;  a ^= rot(c, 4); c += b;
+		a -= c;  a ^= rot(c, 4);  c += b;
 		b -= a;  b ^= rot(a, 6);  a += c;
 		c -= b;  c ^= rot(b, 8);  b += a;
 		a -= c;  a ^= rot(c,16);  c += b;
@@ -94,18 +93,13 @@ func stu(s string) (u []uint32) {
 	return d
 }
 
-
-/*
- * hashlittle2: return 2 32-bit hash values
- *
- * This is identical to hashlittle(), except it returns two 32-bit hash
- * values instead of just one.  This is good enough for hash table
- * lookup with 2^^64 buckets, or if you want a second hash if you're not
- * happy with the first, or if you want a probably-unique 64-bit ID for
- * the key.  *pc is better mixed than *pb, so use *pc first.  If you want
- * a 64-bit value do something like "*pc + (((uint64_t)*pb)<<32)".
- */
-
+// jenkins364: return 2 32-bit hash values.
+// Returns two 32-bit hash values instead of just one.
+// This is good enough for hash table lookup with 2^^64 buckets,
+// or if you want a second hash if you're not happy with the first,
+// or if you want a probably-unique 64-bit ID for the key. 
+// *pc is better mixed than *pb, so use *pc first.
+// If you want a 64-bit value do something like "*pc + (((uint64_t)*pb)<<32)"
 func jenkins364(k []byte, pc, pb uint32) (rpc, rpb uint32) {
 	var a, b, c uint32
 	var rot = func(x, k uint32) uint32 {

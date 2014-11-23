@@ -1,8 +1,8 @@
 // Copyright © 2014 Lawrence E. Bakst. All rights reserved.
 package cuckoo_test
 
-import . "leb/cuckoo"
-import . "leb/cuckoo/dstest"
+import . "github.com/tildeleb/cuckoo"
+import . "github.com/tildeleb/cuckoo/dstest"
 //import "flag"
 //import "fmt"
 //import "math"

@@ -5,7 +5,7 @@ package dstest
 
 import "fmt"
 import "math/rand"
-import . "leb/cuckoo"
+import . "github.com/tildeleb/cuckoo"
 
 var Mr int
 var Ll int

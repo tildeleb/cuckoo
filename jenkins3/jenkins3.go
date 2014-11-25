@@ -29,7 +29,7 @@ var (
 	_ hash.Hash32 = new(Digest)
 )
 
-func hashwords(k []uint32, length int, seed uint32) uint32 {
+func HashWords(k []uint32, length int, seed uint32) uint32 {
 	var a, b, c uint32
 	var rot = func(x, k uint32) uint32 {
 		return x << k | x >> (32 - k)
@@ -100,7 +100,7 @@ func stu(s string) (u []uint32) {
 // or if you want a probably-unique 64-bit ID for the key. 
 // *pc is better mixed than *pb, so use *pc first.
 // If you want a 64-bit value do something like "*pc + (((uint64_t)*pb)<<32)"
-func jenkins364(k []byte, pc, pb uint32) (rpc, rpb uint32) {
+func Jenkins364(k []byte, pc, pb uint32) (rpc, rpb uint32) {
 	var a, b, c uint32
 	var rot = func(x, k uint32) uint32 {
 		return x << k | x >> (32 - k)
@@ -200,16 +200,16 @@ func jenkins364(k []byte, pc, pb uint32) (rpc, rpb uint32) {
 	return c, b
 }
 
-func hashlittle2(s string, pc, pb uint32) (rpc, rpb uint32) {
+func HashString(s string, pc, pb uint32) (rpc, rpb uint32) {
 	k := ([]byte)(s)
-	rpc, rpb = jenkins364(k, pc, pb)
+	rpc, rpb = Jenkins364(k, pc, pb)
 	return
 }
 
 // Sum32 returns the 32 bit hash of data given the seed.
 // This is code is what I started with before I added the hash.Hash and hash.Hash32 interfaces.
 func Sum32(data []byte, seed uint32) uint32 {
-	rpc, _ := jenkins364(data, seed, seed)
+	rpc, _ := Jenkins364(data, seed, seed)
 	return rpc
 }
 
@@ -244,7 +244,7 @@ func (d *Digest) Write(p []byte) (nn int, err error) {
 
 // Return the current hash as a byte slice.
 func (d *Digest) Sum(b []byte) []byte {
-	d.pc, d.pb = jenkins364(d.tail, d.pc, d.pb)
+	d.pc, d.pb = Jenkins364(d.tail, d.pc, d.pb)
 	d.hash = d.pc
 	h := d.pc
 	return append(b, byte(h>>24), byte(h>>16), byte(h>>8), byte(h))
@@ -252,7 +252,7 @@ func (d *Digest) Sum(b []byte) []byte {
 
 // Return the current hash as a 32 bit unsigned type.
 func (d *Digest) Sum32() uint32 {
-	d.pc, d.pb = jenkins364(d.tail, d.pc, d.pb)
+	d.pc, d.pb = Jenkins364(d.tail, d.pc, d.pb)
 	d.hash = d.pc
 	return d.hash
 }

@@ -74,6 +74,8 @@ type Config struct {
 // Most fields are private but the counters are public.
 type Cuckoo struct {
 	tbs				[][]Buckets		// alignment lives here, your data stored here.
+	r				uint64			// reciprocal of Buckets
+	n				uint64			// Size
 	Config							// config data
 	Counters						// stats
 	TableCounters	[]TableCounters	// per table stats
@@ -82,7 +84,7 @@ type Cuckoo struct {
 	hs				[]uint32		// hash sums for each table and fingerprint
 	b				[]byte			// used for result of marshalled data
 	buf				*bytes.Buffer	// for marshalling data
-	r				func() float64	// random numbers for eviction
+	rnd				func() float64	// random numbers for eviction
 	eseed			int64
 	emptyKey		Key				// empty key
 	emptyValue		Value			// if empty key store value lives here and not in a hash table
@@ -127,7 +129,7 @@ func (c *Cuckoo) GetTableCounter(t int, s string) int {
 
 // This function used to select a victim bucket to be evicted.
 func (c *Cuckoo) rbetween(a int, b int) int {
-	rf := c.r()
+	rf := c.rnd()
 	diff := float64(b - a + 1)
 	r2 := rf * diff
 	r3 := r2 + float64(a)
@@ -212,6 +214,8 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 	c.buf = new(bytes.Buffer)
 	c.grow = true
 	c.Tables, c.Buckets, c.Slots =  tables, buckets, slots
+	c.n = uint64(buckets)
+	c.r = uint64(4294967296) / c.n // reciprocal of buckets
 	c.StartLevel, c.LowestLevel = InitialStartLevel, InitialLowestLevel
 	c.Size = tables * buckets * slots
 	c.MaxLoadFactor = loadFactor
@@ -221,7 +225,7 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 		c.emptyKey = emptyKey[0]
 	}
 	c.ekiz = c.emptyKey == zeroKey
-	c.r = rand.Float64
+	c.rnd = rand.Float64
 	c.BucketSize = int(unsafe.Sizeof(b))
 	c.TableCounters = make([]TableCounters, tables)
 
@@ -374,7 +378,26 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 
 	//c.calcHashes(key)
 	for t, _ := range c.tbs {
-		b := c.calcHashForTable(t, key) % uint32(c.Buckets)
+		//ha := c.calcHashForTable(t, key)
+		//ba := ha % uint32(c.Buckets)
+
+		// this was a test to see if pre-calculating the reciprocal would be faster than MOD
+		// it is by 10% for L1 fit and 3% for L2 fit, however switching to assembly might make it better than that.
+		// L1 fit 11.345 total vs 12.113 total
+		// L2 fit 1:00.74 total vs 1:02.49 total
+
+		h := uint64(c.calcHashForTable(t, key))
+		b := h - ((c.r * h) >> 32) * c.n
+		if b > c.n {
+			b -= c.n
+		}
+/*
+		bb := uint32(b)
+		if ba != bb {
+			fmt.Printf("ba=%d, bb=%d\n", ba, bb)
+		}
+*/
+
 		for s, _ := range c.tbs[t][b] {
 			//fmt.Printf("Lookup: key=%d, table=%d, bucket=%d, slot=%d, found key=%d\n", key, t, b, s, c.tbs[t][b][s].key)
 			if c.tbs[t][b][s].key == key {
@@ -406,6 +429,13 @@ func (c *Cuckoo) Delete(key Key) (bool, Value) {
 	for t, _ := range c.tbs {
 		b := c.calcHashForTable(t, key) % uint32(c.Buckets)
 		//b := c.hs[t]
+/*
+		h := uint64(c.calcHashForTable(t, key))
+		b := h - ((c.r * h) >> 32) * c.n
+		if b > c.n {
+			b -= c.n
+		}
+*/
 		for s, _ := range c.tbs[t][b] {
 			//fmt.Printf("Delete: check key=%d, table=%d, bucket=%d, slot=%d, found key=%d\n", key, t, b, s, c.tbs[t][b][s].key)
 			if c.tbs[t][b][s].key == key {
@@ -442,14 +472,24 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		fmt.Printf(">\n")
 	}
 	ins = func(kx Key, vx Value) bool {
-		c.calcHashes(kx)
+		//c.calcHashes(kx)
 		//fmt.Printf("Insert: level=%d, key=%d, ", level, kx)
 		//phv()
 		k = kx // was :=
 		v = vx // was :=
 		for t, _ := range c.tbs {
 			//phv()
-			b := c.hs[t]
+			//b := c.hs[t]
+
+			//ha := c.calcHashForTable(t, k)
+			//ba := ha % uint32(c.Buckets)
+
+			h := uint64(c.calcHashForTable(t, k))
+			b := h - ((c.r * h) >> 32) * c.n
+			if b > c.n {
+				b -= c.n
+			}
+
 			//fmt.Printf("Insert: next table, level=%d, key=%d, value=%d, table=%d, bucket=%d\n", level, k, v, t, b)
 			for s, _ := range c.tbs[t][b] {
 				c.Attempts++

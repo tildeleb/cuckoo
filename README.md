@@ -21,7 +21,7 @@ Slots are a very effective way of achieving high load factors efficiently. Addin
 
 The implementation keeps a number of counters that can be used to derive statistics about how well the implementation is performing. I could not have easily developed the package with the counters.
 
-An example  program is included which easily allows one to qucikly try out new combinations of parameters and explore the results. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
+An example  program is included which easily allows one to quickly try out new combinations of parameters and explore the results. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
 
 Status
 ------
@@ -213,7 +213,7 @@ Now let's look at cuckoo table can support a load factor of 99.9%, albeit with s
 The key number to look at here is the api which has moved from 1.20 on the classic hash table to a 15.20 here. Note that the hash algorithm has to try 15 locations on average to insert a key.
 
 
-Implementation
+Implementation [Must Proofread]
 --------------
 This version of a cuckoo hash table implements a three dimensional hash table. In concrete terms we have "t" hash tables, each has tables has "b" buckets, and each bucket has "s" slots. Total entries is simply t * b * s. In practical terms t can range from 2 to 4 and maybe as high as 8 and slots can range from 1 to 8 and maybe as high as 16 or 32. Access to slots is fast because the pre-fetcher gets them into the L1 cache. The number of buckets should be a prime number. Within reason slots are more efficient execution time wise then hash tables, so prefer slots to tables. For expositional purpose consider hash tables laid out in left to right order.
 
@@ -223,7 +223,7 @@ The evicted key and it's value are  then attempted to be stored in the next hash
 
 The entire procedure is repeated until the end of the left to right hash tables is reached. again for a her specified number of iterations. When the number of iterations has expired (== 0) the algorithm goes into recovery mode, where instead of trying to insert a value it tries to get the value to be inserted back as the value to be inserted. This isn't alway possible in which case data loss happens.
 
-Cuckoo tables are know for the efficiency. Go to the example and ty 
+Cuckoo tables are known for their efficiency. Go to the example folder and run: 
 
 	leb@hula:~/gotest/src/leb/cuckoo/example % time ./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true
 	trials: size=8 kbytes
@@ -232,14 +232,36 @@ Cuckoo tables are know for the efficiency. Go to the example and ty
 	./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true  524.49s user 3.76s system 101% cpu 8:42.49 total
 	leb@hula:~/gotest/src/leb/cuckoo/example % 
 
+A cuckoo has table with 352 locations in it was constructed and 352 random numbers were inserted into this hash table. 1 millions trials were run and with the exception of a single trial all trials achieved a perfect load factor of 1.0, e.g. all the numbers could be inserted. In the single failure case only the last number could not be inserted. So you feel lucky today? If not, I suggest you up the number of tables or slots until you feel lucky.
+
+	leb@hula: % time ./example -t 4 -b 31 -s 16 -flf=1.0 -lf=1.0 -dg -rb=true -nt=1000000
+	trials: cucko hash table size=248 Kibytes
+	trials: tables=4, buckets=31, slots=16, size=1984, max=1984, trials=1000000, fails=0, avg=1.0000
+	trials: MaxRemaining=0, LowestLevel=1438, Aborts=0, bpi=2.09, api=41.98, ipi=0.1481
+	./example -t 4 -b 31 -s 16 -flf=1.0 -lf=1.0 -dg -rb=true -nt=1000000  5420.39s user 28.36s system 100% cpu 1:30:42.80 total
+	leb@hula: % # 	load: 3.28  cmd: example 75597 running 5339.27u 27.95s
+
+Since the example above had a failure rate of 0.0001% let's see if we can improve that. The easiest way is to increase the associativity per bucket and go from 8 slots/bucket to 16 slocks/bucket.
+
+Note the size of the hash tables is 248 Kibytes which just fits in the L2 cache of the processor in my laptop. When I test there are 3 sizes that makes sense to test with. 32KB or less means everything fits in the L1 data cache and this runs very quickly. 256KB is the size of my L2 cache. Memory latency here is 10X L1. My L3 cache is 8 MB. Latencies are about 4, 12, and 28 cycles respectively.
+
+A cuckoo has table with 1984 locations in it was constructed and 1984 random numbers were inserted into this hash table, verified, and deleted. 1 millions trials were run and all trials achieved a perfect load factor of 1.0, e.g. all the numbers could be inserted. 
+
+I am lucky today.
+
+
 
 Implementation FAQ
 ------------------
 **Q**: Why do you use mod instead of power of two tables with a bit mask for bucket indexing?  
-**A**: I am interested in working with large datasets. The optimization of using power of two table sizes is known to me but it doesn't scale to large datasets. e.g. if I have a 16 GiB entry dataset and it grows y one more I will need a 32 GiB allocation and waste 16 GiB.
+**A**: This was a difficult decision. Calculating MOD is much slower than performing an AND. Also to (always) be considered are the processor memory caching effects. ‘MOD’ is slower than AND by an amount larger than an L1-miss-L2-hit time. So assuming that miss-hit pattern (unclear) it would be better to reprobe once than calculate the MOD.
 
-**Q**: Don't you know mod is slow?  
-**A**: Sure but see above.
+I am interested in working with large datasets. In the end the main reason I choose MOD over power of two table sizes and AND masking is because the latter doesn't scale efficiently to large datasets. e.g. if I have a 16 GiB entry dataset and it grows ny one more entry, it will need a 32 GiB allocation and waste 16 GiB.
+
+**Q**: Don't you know MOD is slow?  
+**A**: Sure, but see above.
+
+
 
 **Q**: You mention large datasets but this version uses a 32 bit hash?  
 **A**: Right. This version uses a 32 bit murmur 3 hash which supports a hash table with 4G buckets. Assuming 4 slots per bucket that's 16G entries. Currently enough for what I need. a 64 bit version will be forthcoming as will versions that use different hash functions.

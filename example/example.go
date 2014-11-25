@@ -89,7 +89,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		stop := time.Now()
 		if t == 0 {
 			sz := hrff.Int64{int64(c.Size * c.BucketSize), "bytes"}
-			fmt.Printf("trials: size=%h\n", sz)
+			fmt.Printf("trials: cucko hash table size=%H\n", sz)
 		}
 		durations[0] = tdiff(start, stop)
 		print(0, tables * buckets * slots,)
@@ -151,8 +151,8 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 			fmt.Printf("trials: fs=%#v\n", fs)
 		}
 		if *pt {
-			fmt.Printf("trials: trial=%d, Limited=%v, Failed=%v, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxAttemps=%d, MaxIterations=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",
-				t, fs.Limited, fs.Failed, fs.Remaining, c.Aborts, fs.LowestLevel, c.MaxAttempts, c.MaxIterations, bpi, api, ipi, float64(c.Elements)/float64(c.Size), c.Elements, c.Size)
+			fmt.Printf("trials: trial=%d, fails=%d, L=%v, F=%v, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxAttemps=%d, MaxIterations=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",
+				t, fails, fs.Limited, fs.Failed, fs.Remaining, c.Aborts, fs.LowestLevel, c.MaxAttempts, c.MaxIterations, bpi, api, ipi, float64(c.Elements)/float64(c.Size), c.Elements, c.Size)
 		}
 		if verbose {
 			fmt.Printf("\n")

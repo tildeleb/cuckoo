@@ -44,7 +44,6 @@ func CreateKeysValuesMap(b, n int) *KeySet {
 	return &ks
 }
 
-
 func init() {
 	ks = CreateKeysValuesMap(b, n)
 }
@@ -52,6 +51,7 @@ func init() {
 const ef = 1.0
 const add = 32.0
 const lf = 0.99
+const flf = 0.9
 const tables = 2
 const slots = 8
 
@@ -80,6 +80,13 @@ func TestBasic(t *testing.T) {
 }
 
 func TestMemoryEfficiency(t *testing.T) {
+	const ef = 1.0
+	const add = 32.0
+	const lf = 0.99
+	const flf = 1.0
+	const tables = 2
+	const slots = 8
+	const n = 1000000
     var msb, msa runtime.MemStats
 
 	runtime.ReadMemStats(&msb)
@@ -89,16 +96,17 @@ func TestMemoryEfficiency(t *testing.T) {
 		t.FailNow()
 	}
 	c.SetNumericKeySize(4)
-	for k, v := range ks.M {
-		c.Insert(k, v)
-	}
+	//for k, v := range ks.M {
+	//	c.Insert(k, v)
+	//}
+   	fs := Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, true)
 	runtime.ReadMemStats(&msa)
 
-	t.Logf("Cuckoo Hash LoadFactor:       %0.2f", c.LoadFactor())
+	t.Logf("Cuckoo Hash LoadFactor:       %0.2f", c.GetLoadFactor())
 	t.Logf("Cuckoo Hash memory allocated: %0.0f MiB", float64(msa.Alloc - msb.Alloc)/float64(1<<20))
 	t.Logf("Go map memory allocated:      %0.0f MiB", float64(ks.AllocBytes)/float64(1<<20))
+	t.Logf("stats=%#v\n", fs)
 }
-
 
 func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
 	//t.Logf("BenchmarkCuckooInsert: N=%d, ef=%f, add=%f, lf=%f, tables=%d, slots=%d\n", b.N, ef, add, lf, tables, slots)
@@ -107,11 +115,15 @@ func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, 
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
-		c.Insert(ks.Keys[i%n], ks.Vals[i%n])
-	}
+	if false {
+		for i := 0; i < b.N; i++ {
+			c.Insert(ks.Keys[i%n], ks.Vals[i%n])
+		}
+	} else {
+	   	fs := Fill(c, tables, b.N, slots, 1, flf, false, false, true)
+		b.Logf("stats=%#v\n", fs)
+   }
 }
-
 
 func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
 	c := New(tables, -int(float64(b.N)*ef+add)/(tables * slots), slots, lf, hash)

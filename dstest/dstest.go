@@ -41,6 +41,7 @@ type FillStats struct {
 	Used		int
 	Remaining	int
 	LowestLevel	int
+	Fails		int
 	Failed		bool
 	Limited		bool
 }

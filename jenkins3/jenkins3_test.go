@@ -2,7 +2,7 @@
 package jenkins3_test
 
 //import "flag"
-//import "fmt"
+import "fmt"
 //import "math"
 //import "math/rand"
 //import "runtime"
@@ -10,6 +10,15 @@ import "github.com/tildeleb/cuckoo/jenkins3"
 import "testing"
 
 func TestBasic(t *testing.T) {
+
+	q := "This is the time for all good men to come to the aid of their country..."
+	//qq := []byte{"xThis is the time for all good men to come to the aid of their country..."}
+	//qqq := []byte{"xxThis is the time for all good men to come to the aid of their country..."}
+	//qqqq[] := []byte{"xxxThis is the time for all good men to come to the aid of their country..."}
+
+	u := stu(q)
+	h1 := jenkins3.HashWords(u, 13)
+	fmt.Printf("%08x, %0x8, %08x\n", h1)
 
 	b, c := uint32(0), uint32(0)
 	c, b = jenkins3.HashString("", c, b)
@@ -59,6 +68,17 @@ func TestBasic(t *testing.T) {
 		t.FailNow()
 	}
 
+}
+
+func BenchmarkJenkins(b *testing.B) {
+	//tmp := make([]byte, 4, 4)
+	us := make([]uint32, 1)
+	b.SetBytes(int64(b.N * 4))
+	for i := 1; i <= b.N; i++ {
+		us[0] = uint32(i)
+		//tmp[0], tmp[1], tmp[2], tmp[3] = byte(key&0xFF), byte((key>>8)&0xFF), byte((key>>16)&0xFF), byte((key>>24)&0xFF)
+		jenkins3.HashWords(us, 0)
+	}
 }
 
 /*

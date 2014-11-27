@@ -2,9 +2,11 @@
 
 // This package is a transliteration of Jenkins lookup3.c
 
+// having lots of fun trying to get the inliner to work
+
 package jenkins3
 import (
-	_ "fmt"
+	"fmt"
 	"hash"
 	"unsafe"
 )
@@ -29,7 +31,231 @@ var (
 	_ hash.Hash32 = new(Digest)
 )
 
+uint32_t jenkins_one_at_a_time_hash(char *key, size_t len)
+{
+    uint32_t hash, i;
+    for(hash = i = 0; i < len; ++i)
+    {
+        hash += key[i];
+        hash += (hash << 10);
+        hash ^= (hash >> 6);
+    }
+    hash += (hash << 3);
+    hash ^= (hash >> 11);
+    hash += (hash << 15);
+    return hash;
+}
+
+
+
+func HashWords64(k []uint64, length int, seed uint64) uint64 {
+	var a, b, c uint64
+
+	//fmt.Printf("k=%v\n", k)
+	//fmt.Printf("length=%d, len(k)=%d\n", length, len(k))
+	if length > len(k) {
+		fmt.Printf("length=%d, len(k)=%d\n", length, len(k))
+		panic("HashWords")
+	}
+
+	//The 64-bit golden ratio is 0x9e3779b97f4a7c13LL
+	ul := uint64(len(k))
+	a = 0x9e3779b97f4a7c13 + ul<<2 + seed
+	b, c = a, a
+	cnt := 0
+	for i := 0; i < length; i++ {
+		switch cnt {
+		case 0:
+			a = k[i]
+		case 1:
+			b = k[i]
+		case 2:
+			c = k[i]
+			cnt = 0
+		}
+		a=a-b;  a=a-c;  a=a^(c>>43);
+		b=b-c;  b=b-a;  b=b^(a<<9);
+		c=c-a;  c=c-b;  c=c^(b>>8);
+		a=a-b;  a=a-c;  a=a^(c>>38);
+		b=b-c;  b=b-a;  b=b^(a<<23);
+		c=c-a;  c=c-b;  c=c^(b>>5);
+		a=a-b;  a=a-c;  a=a^(c>>35);
+		b=b-c;  b=b-a;  b=b^(a<<49);
+		c=c-a;  c=c-b;  c=c^(b>>11);
+		a=a-b;  a=a-c;  a=a^(c>>12);
+		b=b-c;  b=b-a;  b=b^(a<<18);
+		c=c-a;  c=c-b;  c=c^(b>>22);
+	}
+	return c
+}
+
+/*
+func omix(a, b, c uint32) (uint32, uint32, uint32) {
+	a -= c;  a ^= rot(c, 4);  c += b;
+	b -= a;  b ^= rot(a, 6);  a += c;
+	c -= b;  c ^= rot(b, 8);  b += a;
+	a -= c;  a ^= rot(c,16);  c += b;
+	b -= a;  b ^= rot(a,19);  a += c;
+	c -= b;  c ^= rot(b, 4);  b += a;
+	return a, b, c
+}
+
+func ofinal(a, b, c uint32) (uint32, uint32, uint32) {
+	c ^= b; c -= rot(b,14);
+	a ^= c; a -= rot(c,11);
+	b ^= a; b -= rot(a,25);
+	c ^= b; c -= rot(b,16);
+	a ^= c; a -= rot(c,4);
+	b ^= a; b -= rot(a,14);
+	c ^= b; c -= rot(b,24);
+	return a, b, c
+}
+
+
+func mix(a, b, c uint32) (uint32, uint32, uint32) {
+	a -= c;  a ^= c << 4 | c >> (32 - 4);  c += b;
+	b -= a;  b ^= a << 6 | a >> (32 - 6);  a += c;
+	c -= b;  c ^= b << 8 | b >> (32 - 8);  b += a;
+	a -= c;  a ^= c << 16 | c >> (32 - 16);  c += b;
+	b -= a;  b ^= a << 19 | a >> (32 - 19);  a += c;
+	c -= b;  c ^= b << 4 | b >> (32 - 4);  b += a;
+	return a, b, c
+}
+
+
+func final(a, b, c uint32) (uint32, uint32, uint32) {
+	c ^= b; c -= b << 14 | b >> (32 - 14);
+	a ^= c; a -= c << 11 | c >> (32 - 11);
+	b ^= a; b -= a << 25 | a >> (32 - 25);
+	c ^= b; c -= b << 16 | b >> (32 - 16);
+	a ^= c; a -= c << 4 | c >> (32 - 4);
+	b ^= a; b -= a << 14 | a >> (32 - 14);
+	c ^= b; c -= b << 24 | b >> (32 - 24);
+	return a, b, c
+}
+*/
+
+//var a, b, c uint32
+
+func rot(x, k uint32) uint32 {
+	return x << k | x >> (32 - k)
+}
+
+// current gc compilers can't inline long functions so we have to split mix into 2
+func mix1(a, b, c uint32) (uint32, uint32, uint32) {
+	a -= c;  a ^= rot(c, 4);  c += b;
+	b -= a;  b ^= rot(a, 6);  a += c;
+	c -= b;  c ^= rot(b, 8);  b += a;
+	//a -= c;  a ^= c << 4 | c >> (32 - 4);  c += b;
+	//b -= a;  b ^= a << 6 | a >> (32 - 6);  a += c;
+	return a, b, c
+}
+
+func mix2(a, b, c uint32) (uint32, uint32, uint32) {
+	a -= c;  a ^= rot(c,16);  c += b;
+	b -= a;  b ^= rot(a,19);  a += c;
+	c -= b;  c ^= rot(b, 4);  b += a;
+//	c -= b;  c ^= b << 8 | b >> (32 - 8);  b += a;
+//	a -= c;  a ^= c << 16 | c >> (32 - 16);  c += b;
+	return a, b, c
+}
+
+/*
+func mix3(a, b, c uint32) (uint32, uint32, uint32) {
+	b -= a;  b ^= a << 19 | a >> (32 - 19);  a += c;
+	c -= b;  c ^= b << 4 | b >> (32 - 4);  b += a;
+	return a, b, c
+}
+*/
+
+
+func final1(a, b, c uint32) (uint32, uint32, uint32) {
+	c ^= b; c -= rot(b, 14);
+	a ^= c; a -= rot(c, 11);
+	b ^= a; b -= rot(a, 25);
+	c ^= b; c -= rot(b, 16);
+	//c ^= b; c -= b << 14 | b >> (32 - 14);
+	//a ^= c; a -= c << 11 | c >> (32 - 11);
+	//b ^= a; b -= a << 25 | a >> (32 - 25);
+	//c ^= b; c -= b << 16 | b >> (32 - 16);
+	return a, b, c
+}
+
+func final2(a, b, c uint32) (uint32, uint32, uint32) {
+	a ^= c; a -= rot(c, 4);
+	b ^= a; b -= rot(a, 14);
+	c ^= b; c -= rot(b, 24);
+	//a ^= c; a -= c << 4 | c >> (32 - 4);
+	//b ^= a; b -= a << 14 | a >> (32 - 14);
+	//c ^= b; c -= b << 24 | b >> (32 - 24);
+	return a, b, c
+}
+
 func HashWords(k []uint32, length int, seed uint32) uint32 {
+	var a, b, c uint32
+
+	//fmt.Printf("k=%v\n", k)
+	//fmt.Printf("length=%d, len(k)=%d\n", length, len(k))
+	if length > len(k) {
+		fmt.Printf("length=%d, len(k)=%d\n", length, len(k))
+		panic("HashWords")
+	}
+/*
+	var mix = func() {
+		a -= c;  a ^= c << 4 | c >> (32 - 4);  c += b;
+		b -= a;  b ^= a << 6 | a >> (32 - 6);  a += c;
+		c -= b;  c ^= b << 8 | b >> (32 - 8);  b += a;
+		a -= c;  a ^= c << 16 | c >> (32 - 16);  c += b;
+		b -= a;  b ^= a << 19 | a >> (32 - 19);  a += c;
+		c -= b;  c ^= b << 4 | b >> (32 - 4);  b += a;
+	}
+
+	var final = func() {
+		c ^= b; c -= b << 14 | b >> (32 - 14);
+		a ^= c; a -= c << 11 | c >> (32 - 11);
+		b ^= a; b -= a << 25 | a >> (32 - 25);
+		c ^= b; c -= b << 16 | b >> (32 - 16);
+		a ^= c; a -= c << 4 | c >> (32 - 4);
+		b ^= a; b -= a << 14 | a >> (32 - 14);
+		c ^= b; c -= b << 24 | b >> (32 - 24);
+	}
+*/
+	ul := uint32(len(k))
+	a = 0xdeadbeef + ul<<2 + seed
+	b, c = a, a
+
+	i := 0
+	//length := 0
+	for ; length > 3; length -= 3 {
+		a += k[i + 0]
+		b += k[i + 1]
+		c += k[i + 2]
+		a, b, c = mix1(a, b, c)
+		a, b, c = mix2(a, b, c)
+		//a, b, c = mix3(a, b, c)
+		i += 3
+	}
+
+	//fmt.Printf("remaining length=%d, len(k)=%d, i=%d, k[i + 2]=%d, k[i + 1]=%d, k[i + 0]=%d\n", length, len(k), i, k[i + 2], k[i + 1], k[i + 0])
+	switch(length) {
+	case 3:
+		c += k[i + 2]
+		fallthrough
+	case 2:
+		b += k[i + 1]
+		fallthrough
+	case 1:
+		a += k[i + 0]
+		a, b, c = final1(a, b, c)
+		a, b, c = final2(a, b, c)
+  	case 0:
+		break
+	}
+	//fmt.Printf("end\n")
+	return c
+}
+
+func XHashWords(k []uint32, length int, seed uint32) uint32 {
 	var a, b, c uint32
 	var rot = func(x, k uint32) uint32 {
 		return x << k | x >> (32 - k)
@@ -81,18 +307,6 @@ func HashWords(k []uint32, length int, seed uint32) uint32 {
 	return c
 }
 
-
-func stu(s string) (u []uint32) {
-	l := (len(s) + 3) / 4
-	d := make([]uint32, l)
-	b := ([]byte)(s)
-	for i := 0; i < l; i += 4 {
-		t := *(*uint32)(unsafe.Pointer(&b[i*4]))
-		d = append(d, t)
-	}
-	return d
-}
-
 // jenkins364: return 2 32-bit hash values.
 // Returns two 32-bit hash values instead of just one.
 // This is good enough for hash table lookup with 2^^64 buckets,
@@ -100,11 +314,13 @@ func stu(s string) (u []uint32) {
 // or if you want a probably-unique 64-bit ID for the key. 
 // *pc is better mixed than *pb, so use *pc first.
 // If you want a 64-bit value do something like "*pc + (((uint64_t)*pb)<<32)"
-func Jenkins364(k []byte, pc, pb uint32) (rpc, rpb uint32) {
+func Jenkins364(k []byte, length int, pc, pb uint32) (rpc, rpb uint32) {
 	var a, b, c uint32
+/*
 	var rot = func(x, k uint32) uint32 {
 		return x << k | x >> (32 - k)
 	}
+
 	var mix = func() {
 		a -= c;  a ^= rot(c, 4); c += b;
 		b -= a;  b ^= rot(a, 6);  a += c;
@@ -122,6 +338,7 @@ func Jenkins364(k []byte, pc, pb uint32) (rpc, rpb uint32) {
 		b ^= a; b -= rot(a,14);
 		c ^= b; c -= rot(b,24);
 	}
+*/
 	ul := uint32(len(k))
 	//fmt.Printf("s=%q, k=%v, len(s)=%d, len(k)=%d\n", s, k, len(s), len(k))
 
@@ -130,13 +347,13 @@ func Jenkins364(k []byte, pc, pb uint32) (rpc, rpb uint32) {
 	b, c = a, a
 	c += pb
 
-	length := 0
-	for length = len(k); length > 12; length -= 12 {
+	for ; length > 12; length -= 12 {
 		//fmt.Printf("k=%q, length=%d\n", k, length)
 		a += *(*uint32)(unsafe.Pointer(&k[0]))
 		b += *(*uint32)(unsafe.Pointer(&k[4]))
 		c += *(*uint32)(unsafe.Pointer(&k[8]))
-		mix()
+		a, b, c = mix1(a, b, c)
+		a, b, c = mix2(a, b, c)
 		k = k[12:]
 	}
 	//fmt.Printf("k=%q, length=%d\n", k, length)
@@ -196,20 +413,30 @@ func Jenkins364(k []byte, pc, pb uint32) (rpc, rpb uint32) {
     	//fmt.Printf("case 0\n")
     	return c, b  /* zero length strings require no mixing */
     }
-	final()
+	a, b, c = final1(a, b, c)
+	a, b, c = final2(a, b, c)
 	return c, b
 }
 
 func HashString(s string, pc, pb uint32) (rpc, rpb uint32) {
 	k := ([]byte)(s)
-	rpc, rpb = Jenkins364(k, pc, pb)
+	rpc, rpb = Jenkins364(k, len(k), pc, pb)
 	return
+}
+
+func HashBytesLength(k []byte, length int, seed uint32) uint32 {
+	if length > len(k) {
+		fmt.Printf("len(k)=%d, length=%d\n", len(k), length)
+		panic("HashBytesLength")
+	}
+	ret, _ := Jenkins364(k, length, seed, 0)
+	return ret
 }
 
 // Sum32 returns the 32 bit hash of data given the seed.
 // This is code is what I started with before I added the hash.Hash and hash.Hash32 interfaces.
 func Sum32(data []byte, seed uint32) uint32 {
-	rpc, _ := Jenkins364(data, seed, seed)
+	rpc, _ := Jenkins364(data, len(data), seed, seed)
 	return rpc
 }
 
@@ -244,7 +471,7 @@ func (d *Digest) Write(p []byte) (nn int, err error) {
 
 // Return the current hash as a byte slice.
 func (d *Digest) Sum(b []byte) []byte {
-	d.pc, d.pb = Jenkins364(d.tail, d.pc, d.pb)
+	d.pc, d.pb = Jenkins364(d.tail, len(d.tail), d.pc, d.pb)
 	d.hash = d.pc
 	h := d.pc
 	return append(b, byte(h>>24), byte(h>>16), byte(h>>8), byte(h))
@@ -252,7 +479,7 @@ func (d *Digest) Sum(b []byte) []byte {
 
 // Return the current hash as a 32 bit unsigned type.
 func (d *Digest) Sum32() uint32 {
-	d.pc, d.pb = Jenkins364(d.tail, d.pc, d.pb)
+	d.pc, d.pb = Jenkins364(d.tail, len(d.tail), d.pc, d.pb)
 	d.hash = d.pc
 	return d.hash
 }

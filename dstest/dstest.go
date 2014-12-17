@@ -15,7 +15,7 @@ type DSTest interface {
 	Insert(key Key, value Value) (ok bool)
 	InsertL(key Key, value Value) (ok bool, rlevel int)
 	Lookup(key Key) (v Value, ok bool)
-	Delete(key Key) (bool, Value)
+	Delete(key Key) (Value, bool)
 	GetCounter(stat string) int
 	GetTableCounter(t int, stat string) int
 }
@@ -162,7 +162,7 @@ func Verify(d DSTest, base, n int) bool {
 func Delete(d DSTest, base, n int, verbose bool) bool {
 	//fmt.Printf("delete from=%d, n=%d\n", base, n)
 	for i := base; i < base + n; i++ {
-		if b, _ := d.Delete(Key(i)); !b {
+		if _, b := d.Delete(Key(i)); !b {
 			return false
 		}
 	}

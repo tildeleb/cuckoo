@@ -5,7 +5,7 @@
 Cuckoo Hash Tables
 ==================
 
-This package is an implementation of a Cuckoo Hash Table. [^1] A Cuckoo Hashtable is similar to Go's builtin map but uses multiple hash tables with a random walk slot eviction strategy when hashing conflicts occur. A hash table is comprised of buckets and each bucket can have multiple slots. Each slot contains a key/value pair.
+This package is an implementation of a Cuckoo Hash Table. [^1] A Cuckoo Hash Table is similar to Go's builtin map but uses multiple hash tables with a random walk slot eviction strategy when hashing conflicts occur. A hash table is comprised of buckets and each bucket can have multiple slots. Each slot contains a key/value pair.
 
 Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both.
 
@@ -13,11 +13,11 @@ Additionally, Cuckoo Hash Tables are subject to pathological cases (cycles) that
 
 In this implementation there are three ways to reduce the probability of running into a pathological case:
 
-1. Set the number of slots per bucket (again, 4, 8, or 16 are good numbers)
-2. Set the number of hash tables to a number greater than 2 helps (4 is a good number)
+1. Increase the number of slots per bucket (again, 4, 8, or 16 are good numbers)
+2. Increase the number of hash tables to a number greater than 2 helps (4 is a good number)
 3. Reduce the load factor  
 
-Slots are a very effective way of achieving high load factors efficiently. Adding hash tables is not nearly as efficient as more hashes per insert need to be calculated.
+Slots are a very effective way of achieving high load factors efficiently. 8, 16, and 32 slots per bucket allow for very high load factors. Adding hash tables is not nearly as efficient as more hashes per insert need to be calculated. Therefore more slots are preferred over more hash tables, but some balance is required between the two.
 
 The implementation keeps a number of counters that can be used to derive statistics about how well the implementation is performing. I could not have easily developed the package with the counters.
 
@@ -25,28 +25,34 @@ An example  program is included which easily allows one to quickly try out new c
 
 Status
 ------
-*The package is is 100% written in Go with no external dependencies.*  
 *The code should currently be considered alpha quality.*
+
+Goals For This Version
+----------------------
+* Allow for many configuration options to explore the design space
+* Clear code that faciltates understanding the algorithm
+* Top notch memory and CPU efficiency within the bounds of pure Go
+* Comprehensive counters to allow for dynamic debugging and statistical analysis
+* Good example program with lots of options to play with various parameters
+* User selectable hash functions
+* Support for non power of two table size and therefore the use of mod to calculate a bucket index.
+* Production quality code with testing
+* 100% written in Go with no external dependencies (for the main package)
 
 Future Development
 ------------------
+* Concurrent lock free access
+* Stable iteration even with concurrent access 
 * 64 bit hash functions
 * More hash functions like CityHash, SIPHash, and others
 * More test cases
 
-Goals
------
-* Allow for many configuration options to explore the design space
-* Production quality code
-* Top notch memory and CPU efficiency within the bounds of pure Go
-* Comprehensive counters to allow for dynamic debugging and statistical analysis
-* Good example program with lots of options to play with parameters
-* User selectable hash functions
-* Focus on 32 bit hash function for first version
-* Support for non power of two table size and therefore the use of mod to calculate a bucket index.
+Bugs and Issues
+---------------
+* Simple iteration support in this version, works well when table is full-ish, slow when table close to empty.
 
-Pathological Cases
-------------------
+Example of a Pathological Case
+------------------------------
 In the following example a cuckoo hash is constructed and 1 million trials are run doing inserts/verify/delete.. In all but a single case the cuckoo hash was able to achieve a load factor of 1.0, which means that the table was completely full with no collisions. In the single case that failed only a single insert, the final insert, could not be completed. This defines life with a cuckoo table.
 
 If the single failure makes you unhappy I suggest you change the number of slots from 8 to 16 and see how many trials it takes to find a failure.
@@ -61,7 +67,7 @@ If the single failure makes you unhappy I suggest you change the number of slots
 How to Build
 ------------
 
-1. Edit the file "kv_default.go" and define the types for Key and Value
+1. Edit the file "kv_default.go" and define the types for "Key" and "Value"
 2. % go build  
 
 Note the default build uses a slice per bucket to implement slots. This allows for experimentation with the number of slots without recompiling but is inefficient from a memory usage perspective. When the number of slots needed for your application is finalized do the following:
@@ -70,6 +76,13 @@ Note the default build uses a slice per bucket to implement slots. This allows f
 2. % go build -tags="array"
 
 This will build a version that uses arrays. Calls to cuckoo.New where the number of slots passed in does not match the number specified in "kvt_array.go" will fail.
+
+Included Sub-Packages
+---------------------
+* jenkins hash package
+* murmur3 hash package
+* dtest test framework
+* primes provides prime numbers for 
 
 Benchmarks
 ----------
@@ -261,10 +274,8 @@ I am interested in working with large datasets. In the end the main reason I cho
 **Q**: Don't you know MOD is slow?  
 **A**: Sure, but see above.
 
-
-
-**Q**: You mention large datasets but this version uses a 32 bit hash?  
-**A**: Right. This version uses a 32 bit murmur 3 hash which supports a hash table with 4G buckets. Assuming 4 slots per bucket that's 16G entries. Currently enough for what I need. a 64 bit version will be forthcoming as will versions that use different hash functions.
+**Q**: What hash function is used?
+**A**: You currently have a choice of an X86-64 accelerated 64 bit hash based on AES or Siphash also accelerated on X86-64 but has fallback to pure Go for platforms other than X86-64. 
 
 **Q**: Why is Delete so slow?  
 **A**: Essentially because Delete has to look is t * s places to find the key whereas Go's build in map only has to look in a single place. In the example benchmarks t == 2 and s == 8 so s * t == 16. Therefor on average Delete has to do 8 lookups to find the key. The speed of Delete can be increased by decreasing the number of slots and tables.

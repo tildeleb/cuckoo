@@ -13,9 +13,15 @@ import "bytes"
 import "math/rand"
 import "encoding/binary"
 import "github.com/tildeleb/cuckoo/murmur3"
-import "github.com/tildeleb/cuckoo/jenkins3"
 import "github.com/tildeleb/cuckoo/primes"
 import "unsafe"
+
+type Container interface {
+	Lookup(key Key) (Value, bool)
+	Delete(key Key) (Value, bool)
+	Insert(key Key, val Value) (ok bool)
+	Map(iter func(key Key, val Value) (stop bool))
+}
 
 var zeroKey	Key
 var zeroVal Value
@@ -136,19 +142,6 @@ func (c *Cuckoo) rbetween(a int, b int) int {
 	//	fmt.Printf("rbetween: a=%d, b=%d, rf=%f, diff=%f, r2=%f, r3=%f\n", a, b, rf, diff, r2, r3)
 	ret := int(r3)
 	return ret
-}
-
-// Select a hash function.
-func getHash(hashName string, seed int) hash.Hash32 {
-	switch hashName {
-	case "m332", "":
-		return murmur3.New(uint32(seed))
-	case "j332":
-		return jenkins3.New(uint32(seed))
-	default:
-		s := fmt.Sprintf("cuckoo: unknown hash function %q\n", hashName)
-		panic(s)
-	}
 }
 
 // Add a hash function to a slice of hash functions.
@@ -331,11 +324,14 @@ func  (c *Cuckoo) calcHash(hf hash.Hash32, seed uint32, key Key) (h uint32) {
 		h = h1 % uint32(c.Buckets)
 		//fmt.Printf("c.hs[%d]=0x%x, Sum32(b)=0x%x\n", k, h1, murmur3.Sum32(b, c.seeds[k]))
 	} else {
+		// move to another hashes.go
 		switch c.HashName {
 		case "m332":
 			h = murmur3.Sum32(c.b, seed) % uint32(c.Buckets)
+/*
 		case "j332":
 			h = jenkins3.Sum32(c.b, seed) % uint32(c.Buckets)
+*/
 		default:
 			panic("calcHash: bad hash name")
 		}
@@ -410,7 +406,7 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 }
 
 // Given key delete the bucket. Return the value found and a bool "ok" indicating success
-func (c *Cuckoo) Delete(key Key) (bool, Value) {
+func (c *Cuckoo) Delete(key Key) (Value, bool) {
 	c.Deletes++
 
 	//fmt.Printf("key=%v, c.emptyKey=%v\n", key, c.emptyKey)
@@ -418,10 +414,10 @@ func (c *Cuckoo) Delete(key Key) (bool, Value) {
 		if c.emptyKeyValid {
 			c.Elements--
 			c.emptyKeyValid = false
-			return true, c.emptyValue
+			return c.emptyValue, true
 		} else {
 			//fmt.Printf("Delete: can't find emptyKey %v\n", key)
-			return false, zeroVal
+			return zeroVal, false
 		}
 	}
 
@@ -446,12 +442,12 @@ func (c *Cuckoo) Delete(key Key) (bool, Value) {
 				if c.Elements < 0 {
 					panic("Delete")
 				}
-				return true, c.tbs[t][b][s].val
+				return c.tbs[t][b][s].val, true
 			}
 		}
 	}
 	//fmt.Printf("Delete: can't find %v\n", key)
-	return false, zeroVal
+	return zeroVal, false
 }
 
 // Internal version of insert routine.
@@ -596,6 +592,20 @@ func (c *Cuckoo) Insert(key Key, val Value) (ok bool) {
 func (c *Cuckoo) InsertL(key Key, val Value) (ok bool, rlevel int) {
 	ok, rlevel = c.insert(key, val, c.StartLevel)
 	return
+}
+
+func (c *Cuckoo) Map(iter func(c *Cuckoo, key Key, val Value) (stop bool)) {
+	for _, vt := range c.tbs {
+		for _, vb := range vt {
+			for _, vs := range vb {
+				if vs.key != c.emptyKey {
+					if iter(c, vs.key, vs.val) {
+						return
+					}
+				}
+			}
+		}
+	}
 }
 
 /*

@@ -4,7 +4,7 @@ package cuckoo_test
 import . "github.com/tildeleb/cuckoo"
 import . "github.com/tildeleb/cuckoo/dstest"
 //import "flag"
-//import "fmt"
+import "fmt"
 //import "math"
 import "math/rand"
 import "runtime"
@@ -217,4 +217,60 @@ func BenchmarkGoMapDelete(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		delete(m, ks.Keys[i%n])
 	}
+}
+
+// Demonstrate how to create a cuckoo table and insert, lookup, and delete elemebts
+func Example() {
+	const tables = 4
+	const buckets = 11
+	const slots = 8
+	const hashName = "m332"
+	var lf = 0.95		// has to be a var or we get an err
+
+	c := New(tables, buckets, slots, lf, hashName)
+	if c == nil {
+		fmt.Printf("Example: New failed probably because slots don't match")
+	}
+	c.SetNumericKeySize(4)
+
+	n := int(float64(tables * buckets * slots) * lf)
+
+	// insert
+	for i := 0; i < n; i++ {
+		k, v := Key(i), Value(i)
+		ok := c.Insert(k, v)
+		if !ok {
+			fmt.Printf("Example: Insert failed")
+			return
+		}
+	}
+
+	// lookup
+	for i := 0; i < n; i++ {
+		k := Key(i)
+		v, ok := c.Lookup(k)
+		if !ok {
+			fmt.Printf("Example: Lookup failed")
+			return
+		}
+		if v != Value(i) {
+			fmt.Printf("Example: Values don't match %v vs %v\n", v, Value(i))
+		}
+	}
+
+	// delete
+	for i := 0; i < n; i++ {
+		k := Key(i)
+		v, ok := c.Delete(k)
+		if !ok {
+			fmt.Printf("Example: Delete failed")
+			return
+		}
+		if v != Value(i) {
+			fmt.Printf("Example: Values don't match %v vs %v\n", v, Value(i))
+		}
+	}
+	fmt.Printf("Example: Passed\n")
+	// Output:
+    // Example: Passed
 }

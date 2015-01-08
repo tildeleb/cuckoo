@@ -2,6 +2,6 @@
 
 package cuckoo
 
-type Key uint32
-type Value uint32
+type Key uint64
+type Value uint64
 

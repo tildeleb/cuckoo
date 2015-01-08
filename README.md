@@ -5,11 +5,13 @@
 Cuckoo Hash Tables
 ==================
 
-This package is an implementation of a Cuckoo Hash Table. [^1] A Cuckoo Hash Table is similar to Go's builtin map but uses multiple hash tables with a random walk slot eviction strategy when hashing conflicts occur. A hash table is comprised of buckets and each bucket can have multiple slots. Each slot contains a key/value pair.
+This package is an implementation of a Cuckoo Hash Table (CHT). [^1] A Cuckoo Hash Table is similar to Go's builtin map but uses multiple hash tables with a random walk slot eviction strategy when hashing conflicts occur. A Cuckoo Hash Table contains multiple hash tables each of which is comprised of buckets with slots. Each slot contains a key/value pair.
 
-Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by increasing the number of hash tables, the number of slots per bucket, or both.
+Why use this instead of Go's builtin map? The first reason would be memory efficiency. The CHT is able to achieve very high load factors. The second reason is 
 
-Additionally, Cuckoo Hash Tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it is automatically detected, another hash table is added, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
+Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by decreasing the load factor, increasing the number of hash tables, the number of slots per bucket, or both.
+
+Additionally, Cuckoo Hash Tables are subject to pathological cases (cycles) that can prevent an insert from completing. If a cycle does occur, it can be automatically detected, another hash table is added on the fly, and the insert is guaranteed to complete. The amount of work done before a cycle is assumed can also be configured by the user via an API call.
 
 In this implementation there are three ways to reduce the probability of running into a pathological case:
 
@@ -17,20 +19,21 @@ In this implementation there are three ways to reduce the probability of running
 2. Increase the number of hash tables to a number greater than 2 helps (4 is a good number)
 3. Reduce the load factor  
 
-Slots are a very effective way of achieving high load factors efficiently. 8, 16, and 32 slots per bucket allow for very high load factors. Adding hash tables is not nearly as efficient as more hashes per insert need to be calculated. Therefore more slots are preferred over more hash tables, but some balance is required between the two.
+Slots are a very effective way of achieving high load factors efficiently. 8, 16, and 32 slots per bucket allow for very high load factors. Adding hash tables is not nearly as efficient as more hashes per insert need to be calculated. Therefore more slots are preferred over more hash tables, but some balance is required between the two. Hash tables can be added on the fly, slots can not.
 
-The implementation keeps a number of counters that can be used to derive statistics about how well the implementation is performing. I could not have easily developed the package with the counters.
+The implementation keeps a number of counters that can be used to derive statistics about how well the implementation is performing. I could not have easily developed this package without the counters.
 
-An example  program is included which easily allows one to quickly try out new combinations of parameters and explore the results. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
+An example program is included which easily allows one to quickly try out new combinations of parameters and explore the results. Unit tests verify that the implementation works as advertised. Benchmarks are also included.
 
 Status
 ------
-*The code should currently be considered alpha quality.*
+*The code should currently be considered pre-alpha quality.*
 
 Goals For This Version
 ----------------------
 * Allow for many configuration options to explore the design space
-* Clear code that faciltates understanding the algorithm
+* 64 bit hash functions
+* Clear code that facilitates understanding the algorithm
 * Top notch memory and CPU efficiency within the bounds of pure Go
 * Comprehensive counters to allow for dynamic debugging and statistical analysis
 * Good example program with lots of options to play with various parameters
@@ -43,7 +46,6 @@ Future Development
 ------------------
 * Concurrent lock free access
 * Stable iteration even with concurrent access 
-* 64 bit hash functions
 * More hash functions like CityHash, SIPHash, and others
 * More test cases
 
@@ -110,7 +112,11 @@ For the case "var map[uint32]uint32 Cuckoo Hash uses 5X less memory than Go's bu
 
 Selectable Hash Functions
 -------------------------
-The hash function used by this package can be selected. Currently the only hash function supported is Murmur 3 with a 32 bit output or "m332" however support for many other hash functions is planned for a future commit.
+The hash function used by this package can be selected. Currently only two hash functions are supported.
+
+1. "aes" This hash function is the same hash function used by Go's map. AESNI instructions are used to generates a very fast high quality hash function. Special versions for 32 and 64 bit data are supported. This hash function is 5x faster than "j264".
+
+2. "j264" This is a version of Jenkin's 2nd generation hash functions. There is some optimization for speed but no special versions of 32 and 64 bit data. No assembler optimization. No fast path. No inlining.
 
 Defining Your Own Key/Value Types
 ---------------
@@ -263,11 +269,10 @@ A cuckoo has table with 1984 locations in it was constructed and 1984 random num
 I am lucky today.
 
 
-
 Implementation FAQ
 ------------------
 **Q**: Why do you use mod instead of power of two tables with a bit mask for bucket indexing?  
-**A**: This was a difficult decision. Calculating MOD is much slower than performing an AND. Also to (always) be considered are the processor memory caching effects. ‘MOD’ is slower than AND by an amount larger than an L1-miss-L2-hit time. So assuming that miss-hit pattern (unclear) it would be better to reprobe once than calculate the MOD.
+**A**: This was a difficult decision. Calculating MOD is much slower than performing a masking AND operation. Also to (always) be considered are the processor memory caching effects. ‘MOD’ is slower than AND by an amount larger than an L1-miss-L2-hit time. So assuming that miss-hit pattern (unclear, depends on table size and other factors) it might be better to re-probe once than calculate the MOD.
 
 I am interested in working with large datasets. In the end the main reason I choose MOD over power of two table sizes and AND masking is because the latter doesn't scale efficiently to large datasets. e.g. if I have a 16 GiB entry dataset and it grows ny one more entry, it will need a 32 GiB allocation and waste 16 GiB.
 

@@ -73,7 +73,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	lowestLevel := 1<<31
 	for i := base; i < amax; i++ {
 		//fmt.Printf("%d\n", i)
-		ok, l := d.InsertL(Key(i), Value(uint32(cnt)))
+		ok, l := d.InsertL(Key(i), Value(uint64(cnt)))
 		if  l < lowestLevel && l != 0 {
 			lowestLevel = l
 		}
@@ -151,7 +151,7 @@ func Verify(d DSTest, base, n int) bool {
 		}
 		//fmt.Printf("Verify: check i=%d, cnt=%d == v=%d\n", i, cnt, uint32(v))
 		if uint32(cnt) != uint32(v) {
-			fmt.Printf("Verify: FAIL i=%d, cnt=%d != v=%d\n", i, cnt, uint32(v))
+			fmt.Printf("Verify: FAIL i=%d, cnt=%d != v=%d\n", i, cnt, uint64(v))
 			return false
 		}
 	}

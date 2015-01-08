@@ -6,16 +6,19 @@
 // then verify they are not in the table
 package main
 
-import "fmt"
-import _ "math"
-import "time"
-import "flag"
-import "math/rand"
-import "github.com/tildeleb/hrff"
-import "github.com/tildeleb/cuckoo"
-import "github.com/tildeleb/cuckoo/primes"
-import "github.com/tildeleb/cuckoo/dstest"
-import "github.com/tildeleb/cuckoo/siginfo"
+import (
+	"fmt"
+	_ "math"
+	"time"
+	"flag"
+	"unsafe"
+	"math/rand"
+	"github.com/tildeleb/hrff"
+	"github.com/tildeleb/cuckoo"
+	"github.com/tildeleb/cuckoo/primes"
+	"github.com/tildeleb/cuckoo/dstest"
+	"github.com/tildeleb/cuckoo/siginfo"
+)
 
 func tdiff(begin, end time.Time) time.Duration {
     d := end.Sub(begin)
@@ -26,7 +29,7 @@ var auto = flag.Bool("a", false, "automatic")
 var dg = flag.Bool("dg", false, "dont't add hash tables automatically")
 var ranf = flag.Bool("rr", true, "random run")
 var ranb = flag.Bool("rb", true, "random base")
-var hash = flag.String("h", "m332", "name of hash function")
+var hash = flag.String("h", "aes", "name of hash function (aes or j264)")
 var ntables = flag.Int("t", 4, "tables")
 var nbuckets = flag.Int("b", 31, "buckets")
 var nslots = flag.Int("s", 8, "slots")
@@ -57,6 +60,7 @@ func statAdd(tot, add *cuckoo.Counters) {
 
 
 func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (cs *cuckoo.Counters, avg float64, rmax int, fails int) {
+	var key cuckoo.Key
 	var acs cuckoo.Counters
 	var labels = []string{"init", "fill", "verify", "delete", "verify"}
 	var durations = make([]time.Duration, 5)
@@ -82,7 +86,11 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		if c == nil {
 			panic("New failed")
 		}
-		c.SetNumericKeySize(4) //  XXXX
+		siz := int(unsafe.Sizeof(key)); switch siz {
+		case 4, 8:
+			//fmt.Printf("Set SetNumericKeySize(%d)\n", siz)
+			c.SetNumericKeySize(siz)
+		}
 		c.SetGrow(!*dg)
 		c.StartLevel = *startLevel
     	c.LowestLevel = *lowLevel
@@ -106,6 +114,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		rmax = fs.Thresh
 		durations[1] = tdiff(start, stop)
 		print(1, fs.Used)
+		//c.Print() // xxx
 
 		tot += fs.Load
 		if fs.Failed {
@@ -167,10 +176,8 @@ func f() {
 	*pt = !*pt
 }
 
-
-func main () {
-	flag.Parse()
-    seed := int64(0)
+func runTrials() {
+   seed := int64(0)
     // fixed pattern or different values each time
     if *ranf {
         seed = time.Now().UTC().UnixNano()
@@ -231,3 +238,9 @@ func main () {
 		}
 //	}
 }
+
+
+func main () {
+	flag.Parse()
+	runTrials()
+ }

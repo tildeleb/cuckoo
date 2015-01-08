@@ -8,34 +8,69 @@ import (
 	_ "fmt"
 )
 
-var tests = []struct {
-	hash   uint32
-	s     string
+var tests = []struct{
+	hash	uint32
+	hex		bool
+	s		string
 }{
-	{0x00000000, ""},
-	{0x3c2569b2, "a"},
-	{0x4f31114c, "bc"},
-	{0xf5797de2, "def"},
-	{0x13704969, "ghij"},
-	{0x248bfa47, "hello"},
-	{0x149bbb7f, "hello, world"},
-	{0xe31e8a70, "19 Jan 2038 at 3:14:07 AM"},
-	{0xd5c48bfc, "The quick brown fox jumps over the lazy dog."},
+	{0x00000000, false, ""},
+	{0x3c2569b2, false, "a"},
+	{0x4f31114c, false, "bc"},
+	{0xf5797de2, false, "def"},
+	{0x13704969, false, "ghij"},
+	{0x248bfa47, false, "hello"},
+	{0x149bbb7f, false, "hello, world"},
+	{0xe31e8a70, false, "19 Jan 2038 at 3:14:07 AM"},
+	{0xd5c48bfc, false, "The quick brown fox jumps over the lazy dog."},
+	{0xb61e6dcc, true,	"daf1596449909da0dde3987638909728"},				// same hash with all seeds!
+}
+
+func unhex(c byte) uint8 {
+        switch {
+        case '0' <= c && c <= '9':
+                return c - '0'
+        case 'a' <= c && c <= 'f':
+                return c - 'a' + 10
+        case 'A' <= c && c <= 'F':
+                return c - 'A' + 10
+        }
+        panic("unhex: bad input")
+}
+
+func hexToBytes(s string) []byte {
+        var data = make([]byte, 1000, 1000)
+        data = data[0:len(s)/2]
+
+        n := len(s)
+        if (n&1) == 1 {
+                panic("gethex: string must be even")
+        }
+        j = len()
+        for i := range data {
+                data[i] = unhex(s[2*i])<<4 | unhex(s[2*i+1])
+        }
+        //fmt.Printf("hexToBytes: len(data)=%d, len(s)=%d\n", len(data), len(s))
+        return data[0:len(s)/2]
 }
 
 func TestRef(t *testing.T) {
 	var h32 hash.Hash32 = New(0)
 	for _, elem := range tests {
 		h32.Reset()
-		h32.Write([]byte(elem.s))
+		b := []byte(elem.s)
+		if elem.hex {
+			b = hexToBytes(elem.s)
+		}
+		h32.Write(b)
 		//fmt.Printf("TestRef: %q, len=%d\n", elem.s, len(string(elem.s)))
 		if v := h32.Sum32(); v != elem.hash {
 			t.Errorf("h32.Sum32: %q 0x%x (want 0x%x)", elem.s, v, elem.hash)
 		}
 
-		if v := Sum32([]byte(elem.s)); v != elem.hash {
+		if v := Sum32(b, 0); v != elem.hash {
 			t.Errorf("Sum32: %q 0x%x (want 0x%x)", elem.s, v, elem.hash)
 		}
+
 	}
 }
 
@@ -46,7 +81,7 @@ func bench32(b *testing.B, length int) {
 	b.SetBytes(int64(length))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Sum32(buf)
+		Sum32(buf, 0)
 	}
 }
 

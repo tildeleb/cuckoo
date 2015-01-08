@@ -7,7 +7,15 @@ Cuckoo Hash Tables
 
 This package is an implementation of a Cuckoo Hash Table (CHT). [^1] A Cuckoo Hash Table is similar to Go's builtin map but uses multiple hash tables with a random walk slot eviction strategy when hashing conflicts occur. A Cuckoo Hash Table contains multiple hash tables each of which is comprised of buckets with slots. Each slot contains a key/value pair.
 
-Why use this instead of Go's builtin map? The first reason would be memory efficiency. The CHT is able to achieve very high load factors. The second reason is 
+Why use this instead of Go's builtin map?
+
+1. Memory efficiency. In a benchmark below the CHT used 5X (15 MiB vs 75 MiB) less memory than Go's map at competitive speeds for insert and lookup. This is because you can tune CHT's key and value to your specific needs, while Go's map current uses a single hash table with 8 slots and an overflow pointer.
+
+2. Memory efficiency. In addition to being the above, a CHT can handle load factors as high as .999 with some tradeoff in insert efficiency. If you have a mostly read only data structure a CHT is perfect. Even if you don't, the knobs and dials here can be set to give you the insert efficiency you desire.
+
+3. Large Scale. As of 1.4 I believe Go's maps uses power of two sizes for the hash tables. This allows a mask to be used to calculate the bucket index. However large data sets often require a much larger map than required. For example a 2 GB + 1 byte data structure will require 4 GB. (*needs to be confirmed*)
+
+4. No GC pauses. As of Go 1.4 Go's maps can be subject to significant GC pauses as the overflow pointers are scanned. The CHT has no overflow pointers and no pointers at all, unless you add them to the value you store.
 
 Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by decreasing the load factor, increasing the number of hash tables, the number of slots per bucket, or both.
 

@@ -398,7 +398,7 @@ func ui64tob2(b []byte, key Key) {
 // To get this to inline the optimization for NumericKeySize == 4 was moved to _calcHash
 func  (c *Cuckoo) calcHash(hf hash.Hash64, seed uint64, key Key) uint64 {
 	// speed up a common key case
-	if c.NumericKeySize == 8 && c.hashno == aes {
+	if c.NumericKeySize == 8 { // && c.hashno == aes {
 		ui64tob1(c.buf.b, key)
 		ui64tob2(c.buf.b, key)
 		return aeshash.Hash64(uint64(key), seed)

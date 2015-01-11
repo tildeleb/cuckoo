@@ -10,9 +10,13 @@ import (
 	"fmt"
 	_ "math"
 	"time"
+	"os"
+	"log"
 	"flag"
 	"unsafe"
+	"runtime"
 	"math/rand"
+	"runtime/pprof"
 	"github.com/tildeleb/hrff"
 	"github.com/tildeleb/cuckoo"
 	"github.com/tildeleb/cuckoo/primes"
@@ -26,6 +30,7 @@ func tdiff(begin, end time.Time) time.Duration {
 }
 
 var auto = flag.Bool("a", false, "automatic")
+var fo = flag.Bool("fo", false, "fill only")
 var dg = flag.Bool("dg", false, "dont't add hash tables automatically")
 var ranf = flag.Bool("rr", true, "random run")
 var ranb = flag.Bool("rb", true, "random base")
@@ -45,6 +50,9 @@ var pt = flag.Bool("pt", false, "print summary for each trail")
 var ps = flag.Bool("ps", false, "print stats at the end of all trails")
 var verbose = flag.Bool("v", false, "verbose")
 
+var cp = flag.String("cp", "", "write cpu profile to file")
+var mp = flag.String("mp", "", "write memory profile to this file")
+
 func statAdd(tot, add *cuckoo.Counters) {
 	tot.Elements += add.Elements
 	tot.Inserts += add.Inserts
@@ -58,12 +66,48 @@ func statAdd(tot, add *cuckoo.Counters) {
 	tot.BucketSize = add.BucketSize
 }
 
+func hu(v uint64, u string) hrff.Int64 {
+	return hrff.Int64{V: int64(v), U: u}
+}
+
+func hi(v int64, u string) hrff.Int64 {
+	return hrff.Int64{V: int64(v), U: u}
+}
+
+func dump_mstats(m *runtime.MemStats, mstats, cstats, gc bool) {
+	if mstats {
+		fmt.Printf("Alloc=%h, TotalAlloc=%h, Sys=%h, Lookups=%h, Mallocs=%h, Frees=%h\n",
+			hu(m.Alloc, "B"), hu(m.TotalAlloc, "B"), hu(m.Sys, "B"), hu(m.Lookups, ""), hu(m.Mallocs, ""), hu(m.Frees, ""))
+		fmt.Printf("HeapAlloc=%h, HeapSys=%h, HeapIdle=%h, HeapInuse=%h, HeapReleased=%h, HeapObjects=%h\n",
+			hu(m.HeapAlloc, "B"), hu(m.HeapSys, "B"), hu(m.HeapIdle, "B"), hu(m.HeapInuse, "B"), hu(m.HeapReleased, "B"), hu(m.HeapObjects, ""))
+		fmt.Printf("StackInuse=%d, StackSys=%d, MSpanInuse=%d, MSpanSys=%d, MCacheSys=%d, BuckHashSys=%d\n", m.StackInuse, m.StackSys, m.MSpanInuse, m.MSpanSys, m.MCacheSys, m.BuckHashSys)
+		fmt.Printf("NextGC=%d, LastGC=%d, PauseTotalNs=%d, NumGC=%d, EnableGC=%v, DebugGC=%v\n", m.NextGC, m.LastGC, m.PauseTotalNs, m.NumGC, m.EnableGC, m.DebugGC)
+	}
+	if cstats {
+		for i, b := range m.BySize {
+			if b.Mallocs == 0 {
+				continue
+			}
+			fmt.Printf("BySize[%d]: Size=%d, Malloc=%d, Frees=%d\n", i, b.Size, b.Mallocs, b.Frees)
+		}
+	}
+	if gc {
+		for i := range m.PauseNs {
+			fmt.Printf("PauseNs: ")
+			fmt.Printf("%d, ", m.PauseNs[(int(m.NumGC)+255+i)%256])
+			fmt.Printf("\n")
+		}
+	}
+}
+
+
 
 func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (cs *cuckoo.Counters, avg float64, rmax int, fails int) {
 	var key cuckoo.Key
 	var acs cuckoo.Counters
 	var labels = []string{"init", "fill", "verify", "delete", "verify"}
 	var durations = make([]time.Duration, 5)
+    var msb, msa runtime.MemStats
 
 	var print = func(i, used int) {
 		if verbose {
@@ -104,9 +148,15 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 
 		// fill
 		//fmt.Printf("trials: fill\n")
+
+		runtime.ReadMemStats(&msb)
+		dump_mstats(&msa, true, false, false)
+		fmt.Printf("\n")
 		start = time.Now()
 		fs := dstest.Fill(c, tables, buckets, slots, ibase, *flf, verbose, *pl, r)
 		stop = time.Now()
+		runtime.ReadMemStats(&msa)
+		dump_mstats(&msa, true, false, false)
 		bpi := float64(c.Bumps)/float64(c.Inserts)
 		api := float64(c.Attempts)/float64(c.Inserts)
 		ipi := float64(c.Iterations)/float64(c.Inserts)
@@ -119,6 +169,9 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		tot += fs.Load
 		if fs.Failed {
 			fails++
+		}
+		if *fo {
+			continue
 		}
 
 		// verify
@@ -242,5 +295,26 @@ func runTrials() {
 
 func main () {
 	flag.Parse()
+    if *mp != "" {
+        f, err := os.Create(*mp)
+        if err != nil {
+            log.Fatal(err)
+        }
+		runTrials()
+        pprof.WriteHeapProfile(f)
+        f.Close()
+        return
+    }
+
+    if *cp != "" {
+        f, err := os.Create(*cp)
+        if err != nil {
+            log.Fatal(err)
+        }
+		runTrials()
+        pprof.StartCPUProfile(f)
+        defer pprof.StopCPUProfile()
+        return
+    }
 	runTrials()
  }

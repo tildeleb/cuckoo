@@ -14,7 +14,8 @@ import (
 	"math/rand"
 	_ "encoding/binary"
 	_ "github.com/tildeleb/cuckoo/murmur3"
-	"github.com/tildeleb/cuckoo/jenkins264"
+	_ "github.com/tildeleb/cuckoo/jk3"
+	_ "github.com/tildeleb/cuckoo/jenkins264"
 	"github.com/tildeleb/hashland/aeshash" // no longer self contained package
 	"github.com/tildeleb/cuckoo/primes"
 	"github.com/alecthomas/binary"
@@ -40,6 +41,7 @@ type Bucket struct {
 // Counters. All public but we now have an API to access them.
 type Counters struct {
 	BucketSize		int		// size of a single bucket (1 slot) in bytes
+	BucketsSize		int		// size of a single bucket * slots
 	Elements		int		// number of elements currently residing in the data structure
 	Inserts			int		// number of time insert has been called
 	Attempts		int		// number of attempts to insert all elements
@@ -85,7 +87,7 @@ type Config struct {
 // The main data structure for cuckoo hash.
 // Most fields are private but the counters are public.
 type Cuckoo struct {
-	tbs				[][]Buckets		// alignment lives here, your data stored here.
+	tbs				[][]Buckets		// indexed defineBuckets defined in kv_array.go or kv_slice.go
 	r				uint64			// reciprocal of Buckets
 	n				uint64			// Size
 	Config							// config data
@@ -112,9 +114,9 @@ type Cuckoo struct {
 // buf saves the data in a slice that can be accessed without a copy.
 // Used to serialize the key.
 type buf struct {
-	i int
 	b []byte
-	base []byte
+	base [4096]byte
+	i int
 }
 
 func (b *buf) Reset() {
@@ -123,8 +125,8 @@ func (b *buf) Reset() {
 
 func newBuf(size int) (b *buf) {
 	buf := buf{}
-	buf.base = make([]byte, size, size)
-	buf.base = buf.base[0:0] // makes printing buf cleaner
+	//buf.base = make([]byte, size, size)
+	//buf.base = buf.base[0:0] // makes printing buf cleaner
 	return &buf
 }
 
@@ -225,11 +227,12 @@ func (c *Cuckoo) addTable(growFactor int) {
 // If specified, use emptyKey as the key that signifies that an element is unused.
 // However, usually the default, the Go zero initization, is what you want.
 func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
-	var b Buckets
+	var bs Buckets
+	var b Bucket
 	//var akey Key
 
-	if len(b) > 0 && len(b) != slots {
-		fmt.Printf("New: slot mismatch compiled slots=%d, requested slots=%d\n", len(b), slots)
+	if len(bs) > 0 && len(bs) != slots {
+		fmt.Printf("New: slot mismatch compiled slots=%d, requested slots=%d\n", len(bs), slots)
 		return nil
 	}
 
@@ -263,6 +266,7 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 	c.ekiz = c.emptyKey == zeroKey
 	c.rnd = rand.Float64
 	c.BucketSize = int(unsafe.Sizeof(b))
+	c.BucketsSize = int(unsafe.Sizeof(bs))
 	c.TableCounters = make([]TableCounters, tables)
 
 	c.seeds = make([]uint64, tables, tables)
@@ -352,12 +356,23 @@ func  (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
 		h = aeshash.Hash32(uint32(key), seed)
 		return
 	}
-	c.buf.Reset()
-	if err := c.encoder.Encode(&key); err != nil {
-		//fmt.Printf("Write: err=%q\n", err)
-		panic("Insert: binary.Write")
+	// ok we have to copy the key now as all the other hash functions want a slice of bytes.
+	switch c.NumericKeySize {
+	case 4:
+		c.buf.b = c.buf.base[0:4]
+		c.buf.b[0], c.buf.b[1], c.buf.b[2], c.buf.b[3] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24)
+	case 8:
+		c.buf.b = c.buf.base[0:8]
+		c.buf.b[0], c.buf.b[1], c.buf.b[2], c.buf.b[3], c.buf.b[4], c.buf.b[5], c.buf.b[6], c.buf.b[7] =
+			byte(key), byte(key>>8), byte(key>>16), byte(key>>24), byte(key>>32), byte(key>>40), byte(key>>48), byte(key>>56)
+	default:
+		c.buf.Reset()
+		if err := c.encoder.Encode(&key); err != nil {
+			//fmt.Printf("Write: err=%q\n", err)
+			panic("Insert: binary.Write")
+		}
+		c.buf.b = c.buf.base[0:c.buf.i]
 	}
-	c.buf.b = c.buf.base[0:c.buf.i]
 	if c.HashName == "" {
 		panic("hash interface")
 		hf.Reset()
@@ -366,11 +381,11 @@ func  (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
 		h = h1 % uint64(c.Buckets)
 		//fmt.Printf("c.hs[%d]=0x%x, Sum32(b)=0x%x\n", k, h1, murmur3.Sum32(b, c.seeds[k]))
 	} else {
-		if c.HashName == "aes" {
-			h = aeshash.Hash(c.buf.b, seed) % uint64(c.Buckets)
-		} else {
-			h = jenkins264.Hash(c.buf.b, seed) % uint64(c.Buckets)
-		}
+		//if c.HashName == "aes" {
+		h = aeshash.Hash(c.buf.b, seed) % uint64(c.Buckets)
+		//} else {
+		//h = jenkins264.Hash(c.buf.b, seed) % uint64(c.Buckets)
+		//}
 /*
 			h = uint64(murmur3.Sum32(c.b, uint32(seed))) % uint64(c.Buckets)
 		case "j332":
@@ -382,7 +397,11 @@ func  (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
 
 // the following 5 functions/methods can be inlined.
 func ui32tob(b []byte, key Key) {
-	b[0], b[1], b[2], b[3] = byte(key&0xFF), byte((key>>8)&0xFF), byte((key>>16)&0xFF), byte((key>>24)&0xFF)
+	b[0], b[1], b[2], b[3] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24)
+}
+
+func ui64tob(b []byte, key Key) {
+	b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24), byte(key>>32), byte(key>>40), byte(key>>48), byte(key>>56)
 }
 
 func ui64tob1(b []byte, key Key) {
@@ -398,11 +417,13 @@ func ui64tob2(b []byte, key Key) {
 // To get this to inline the optimization for NumericKeySize == 4 was moved to _calcHash
 func  (c *Cuckoo) calcHash(hf hash.Hash64, seed uint64, key Key) uint64 {
 	// speed up a common key case
-	if c.NumericKeySize == 8 { // && c.hashno == aes {
-		ui64tob1(c.buf.b, key)
-		ui64tob2(c.buf.b, key)
+	if c.NumericKeySize == 8 && c.hashno == aes {
+		//fmt.Printf("8")
+		//ui64tob1(c.buf.b, key)
+		//ui64tob2(c.buf.b, key)
 		return aeshash.Hash64(uint64(key), seed)
 	}
+	//fmt.Printf("%d ", c.NumericKeySize)
 	return c._calcHash(hf, seed, key)
 }
 
@@ -558,17 +579,27 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			}
 */
 
+			//h := uint64(v)
+
+			//ui32tob(c.buf.b, k)
+			//h := uint64(jenkins3.Sum32(c.buf.b, uint32(c.seeds[t])))
+
+			//ui32tob(c.buf.b, k)
+			//h := uint64(murmur3.Sum32(c.buf.b, uint32(c.seeds[t])))
+			//h := aeshash.Hash64(uint64(k), c.seeds[t])
 			h := uint64(c.calcHashForTable(t, k))
+			//fmt.Printf("h1=%#x, h=%#x\n", h1, h)
+			//h := uint64(k)
 			b := h % uint64(c.Buckets)
 
-			//fmt.Printf("Insert: next table, level=%d, key=%d, value=%d, table=%d, bucket=%d\n", level, k, v, t, b)
+			//fmt.Printf("Insert: next table, h=%#x, level=%d, table=%d, bucket=%d, key=%d, value=%d\n", h, level, t, b, k, v)
 			for s, _ := range c.tbs[t][b] {
 				c.Attempts++
 				pk := c.tbs[t][b][s].key
 				if pk == c.emptyKey || pk == k  {	// added replacement semantics
 					c.tbs[t][b][s].key, c.tbs[t][b][s].val = k, v
 					if pk == c.emptyKey || pk == k {
-						//fmt.Printf("Insert: level=%d, pk=%d, key=%d, value=%d, table=%d, bucket=%d, slot=%d\n", level, pk, k, v, t, b, s)
+						//fmt.Printf("Insert: h=%#x, level=%d, table=%d, bucket=%d, slot=%d, pk=%d, key=%d, value=%d\n", h, level, t, b, s, pk, k, v)
 					}
 					c.Elements++
 					c.TableCounters[t].Elements++
@@ -585,7 +616,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			c.tbs[t][b][victim].val = v
 			k = bucket.key
 			v = bucket.val
-			c.calcHashes(k)
+			//c.calcHashes(k) ??? XXX ???
 			//fmt.Printf("insert: level=%d, new key=%d, val=%d\n", level, k, v)
 		}
 		// could not find any space for key in any table moving left to right
@@ -604,7 +635,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		if level <= 0 {
 			c.Aborts++
 			// sublte bug, on failure to insert the key not inserted may not be the original key
-			// so keep interating until the original key is not found to prevent data loss
+			// so keep interating until the original key is not found to prevent random data loss
 			_, found := c.Lookup(key)
 			//fmt.Printf("key %d found=%v\n", key, found)
 			if !found {

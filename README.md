@@ -9,13 +9,13 @@ This package is an implementation of a Cuckoo Hash Table (CHT). [^1] A Cuckoo Ha
 
 Why use this instead of Go's builtin map?
 
-1. Memory efficiency. In a benchmark below the CHT used 5X (15 MiB vs 75 MiB) less memory than Go's map at competitive speeds for insert and lookup. This is because you can tune CHT's key and value to your specific needs, while Go's map current uses a single hash table with 8 slots and an overflow pointer.
+1. Memory Efficiency. In a benchmark below the CHT used 6.5X (15 MiB vs 117 MiB) less memory than Go's built-in map at competitive speeds for insert and lookup. This is because you can tune CHT's key and value to your specific needs, while Go's map current uses a single hash table with 8 slots and an overflow pointer. For small lookup tables this means CHT stores more data in L1/L2/L3 cache. For larger tables it means greater overall memory efficiency.
 
-2. Memory efficiency. In addition to being the above, a CHT can handle load factors as high as .999 with some tradeoff in insert efficiency. If you have a mostly read only data structure a CHT is perfect. Even if you don't, the knobs and dials here can be set to give you the insert efficiency you desire.
+2. Memory Efficiency. In addition to being the above, a CHT can handle load factors as high as .999 with some tradeoff in insert efficiency. If you have a mostly read only data structure a CHT is perfect. Even if you don't, the knobs and dials in this implementation can be set to give you the insert efficiency you desire.
 
-3. Large Scale. As of 1.4 I believe Go's maps uses power of two sizes for the hash tables. This allows a mask to be used to calculate the bucket index. However large data sets often require a much larger map than required. For example a 2 GB + 1 byte data structure will require 4 GB. (*needs to be confirmed*)
+3. Large Scale Memory Efficiency. As of 1.4 I believe Go's maps uses power of two sizes for its hash tables. This allows a mask to be used to calculate the bucket index instead of a MOD instruction. Unfortunately, large data sets often require a much larger allocation than required. For example a 2 GB + 1 byte data structure will require 4 GB. (*needs to be confirmed*)
 
-4. No GC pauses. As of Go 1.4 Go's maps can be subject to significant GC pauses as the overflow pointers are scanned. The CHT has no overflow pointers and no pointers at all, unless you add them to the value you store.
+4. No GC pauses. As of Go 1.4 Go's maps can be subject to significant GC pauses as the overflow pointers are scanned. The CHT has no overflow pointers and no pointers at all, unless you add them to the value you store. This may change in Go 1.5.
 
 Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by decreasing the load factor, increasing the number of hash tables, the number of slots per bucket, or both.
 
@@ -96,27 +96,32 @@ Included Sub-Packages
 
 Benchmarks
 ----------
-The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. The Cuckoo Hashtable configuration is 2 hash tables with 8 slots per bucket along with the array optimization. Another optimization is turned on that marshals numeric quantities (currently 32 bit only) more efficiently than using the binary package.
+The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. The Cuckoo Hashtable configuration is 2 hash tables with 8 slots per bucket with the array optimization. Another optimization is turned on that marshals numeric quantities (currently 32 and 64 bit only) more efficiently than using the binary package.
 
-	leb@hula:~/gotest/src/leb/cuckoo % go test -bench=. -v
+	leb@hula:~/gotest/src/github.com/tildeleb/cuckoo % go test -bench=. -v
+	=== RUN TestBasic-11
+	--- PASS: TestBasic-11 (0.41s)
 	=== RUN TestMemoryEfficiency-11
-	--- PASS: TestMemoryEfficiency-11 (1.43 seconds)
-		cuckoo_test.go:71: Cuckoo Hash LoadFactor:       0.99
-		cuckoo_test.go:72: Cuckoo Hash memory allocated: 15 MiB
-		cuckoo_test.go:73: Go map memory allocated:      75 MiB
+	--- PASS: TestMemoryEfficiency-11 (0.56s)
+		cuckoo_test.go:147: Cuckoo Hash LoadFactor:       0.99
+		cuckoo_test.go:148: Cuckoo Hash memory allocated: 15 MiB
+		cuckoo_test.go:149: Go map memory allocated:      117 MiB
+	=== RUN: Example
+	--- PASS: Example (0.00s)
 	PASS
-	BenchmarkCuckoo2T2SInsert-11	 5000000	       296 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkCuckoo2T2SSearch-11	 5000000	       290 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkCuckoo2T2SDelete-11	10000000	       332 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkGoMapInsert-11	10000000	       219 ns/op	       9 B/op	       0 allocs/op
-	BenchmarkGoMapSearch-11	20000000	       140 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkGoMapDelete-11	50000000	        28.4 ns/op	       0 B/op	       0 allocs/op
-	ok  	leb/cuckoo	30.475s
-	leb@hula:~/gotest/src/leb/cuckoo % 
+	BenchmarkCuckoo2T2SInsert-11	 5000000	       242 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkCuckoo2T2SSearch-11	10000000	       172 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkCuckoo2T2SDelete-11	10000000	       308 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkGoMapInsert-11	 5000000	       264 ns/op	      33 B/op	       0 allocs/op
+	BenchmarkGoMapSearch-11	10000000	       144 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkGoMapDelete-11	50000000	        22.8 ns/op	       0 B/op	       0 allocs/op
+	ok  	github.com/tildeleb/cuckoo	33.872s
+	leb@hula:~/gotest/src/github.com/tildeleb/cuckoo % 
 
 Benchmarks Discussion
 ---------------------
-For the case "var map[uint32]uint32 Cuckoo Hash uses 5X less memory than Go's builtin map and does so while achieving a load factor of 99% with a bit less efficiency. Again the Cuckoo Hash for this example uses 2 hash tables and each bucket has 8 slots. From a performance standpoint the Cuckoo hash achieves 296 ns/op on Inserts vs 219 ns/op for the build-in map. Much of this overhead has comes from calculating 2 hashes per insert.
+For the case "var map[uint64]uint64 Cuckoo Hash uses 6.5X less memory than Go's builtin map and does so while achieving a load factor of 99% with similar efficiency. Again, the Cuckoo Hash for this example uses 2 hash tables and each bucket has 8 slots. From a performance standpoint the Cuckoo hash achieves 242 ns/op on Inserts vs 264 ns/op for the build-in map.
+
 
 Selectable Hash Functions
 -------------------------

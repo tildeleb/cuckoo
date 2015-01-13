@@ -107,8 +107,8 @@ func TestBasic(t *testing.T) {
 		t.FailNow()
 	}
 	c.SetNumericKeySize(8)
-   	_ = Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false)
- 	ok := Verify(c, 1, n/(tables*slots))
+   	_ = Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false, false)
+ 	ok := Verify(c, 1, n/(tables*slots), false)
  	if !ok {
  		t.FailNow()
  	}
@@ -135,7 +135,7 @@ func TestMemoryEfficiency(t *testing.T) {
 	//for k, v := range ks.M {
 	//	c.Insert(k, v)
 	//}
-   	fs := Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, true)
+   	fs := Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false, true)
 	runtime.ReadMemStats(&msa)
 
 	//dump_mstats(&msb, true, false, false)
@@ -166,7 +166,7 @@ func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, 
 			c.Insert(ks.Keys[i%n], ks.Vals[i%n])
 		}
 	} else {
-	   	fs := Fill(c, tables, b.N, slots, 1, flf, false, false, true)
+	   	fs := Fill(c, tables, b.N, slots, 1, flf, false, false, false, true)
 	   	fs.Fails = fs.Fails
 		//b.Logf("stats=%#v\n", fs)
 	}
@@ -276,12 +276,18 @@ func Example() {
 	const slots = 8
 	//const hashName = "m332"
 	var lf = 0.95		// has to be a var or we get an err
+	var cnt int
+
+	var countf = func(c *Cuckoo, key Key, val Value) (stop bool) {
+		cnt++
+		return
+	}
 
 	c := New(tables, buckets, slots, lf, hashName)
 	if c == nil {
 		fmt.Printf("Example: New failed probably because slots don't match")
 	}
-	c.SetNumericKeySize(4)
+	c.SetNumericKeySize(8)
 
 	n := int(float64(tables * buckets * slots) * lf)
 
@@ -308,6 +314,13 @@ func Example() {
 		}
 	}
 
+	// iterate
+	c.Map(countf)
+	s := fmt.Sprintf("cnt=%d vs %d\n", cnt, c.Counters.Elements)
+	if cnt != c.Counters.Elements {
+		panic(s)
+	}
+
 	// delete
 	for i := 0; i < n; i++ {
 		k := Key(i)
@@ -320,6 +333,14 @@ func Example() {
 			fmt.Printf("Example: Values don't match %v vs %v\n", v, Value(i))
 		}
 	}
+
+	// iterate
+	cnt = 0
+	c.Map(countf)
+	if cnt != 0 {
+		panic("cnt 2")
+	}
+
 	fmt.Printf("Example: Passed\n")
 	// Output:
     // Example: Passed

@@ -5,17 +5,21 @@
 Cuckoo Hash Tables
 ==================
 
-This package is an implementation of a Cuckoo Hash Table (CHT). [^1] A Cuckoo Hash Table is similar to Go's builtin map but uses multiple hash tables with a random walk slot eviction strategy when hashing conflicts occur. A Cuckoo Hash Table contains multiple hash tables each of which is comprised of buckets with slots. Each slot contains a key/value pair.
+This package is an implementation of a Cuckoo Hash Table (CHT). [^1] A Cuckoo Hash Table is similar to Go's builtin hash map but uses multiple hash tables with a cascading random walk slot eviction strategy when hashing conflicts occur. Additional hash tables can optionally be added on the fly. A Cuckoo Hash Table is a 3D data structure. Multiple hash tables are comprised of buckets. Each bucket contains slots. Each slot contains a key/value pair. The hash tables all use the same hash function but with different seeds.
 
-Why use this instead of Go's builtin map?
+Go's builtin map is well designed and implemented. The author uses it all the time. This CHT is a boutique and bespoke data structure better suited for special cases where the datasets are large, memory efficiency is key, or both.
 
-1. Memory Efficiency. In a benchmark below the CHT used 6.5X (15 MiB vs 117 MiB) less memory than Go's built-in map at competitive speeds for insert and lookup. This is because you can tune CHT's key and value to your specific needs, while Go's map current uses a single hash table with 8 slots and an overflow pointer. For small lookup tables this means CHT stores more data in L1/L2/L3 cache. For larger tables it means greater overall memory efficiency.
+*Why use a CHT instead of Go's builtin map?*
+
+1. Memory Efficiency. In a benchmark below `map[uint64]uint64` the CHT used 6.5X (15 MiB vs 117 MiB) less memory than Go's built-in map at competitive speeds for insert and lookup. This is because you can tune CHT's key and value to your specific needs, while Go's map current uses a single hash table with 8 slots and an overflow pointer. For small lookup tables this means CHT stores more data in L1/L2/L3 cache. For larger tables it means greater overall memory efficiency.
 
 2. Memory Efficiency. In addition to being the above, a CHT can handle load factors as high as .999 with some tradeoff in insert efficiency. If you have a mostly read only data structure a CHT is perfect. Even if you don't, the knobs and dials in this implementation can be set to give you the insert efficiency you desire.
 
 3. Large Scale Memory Efficiency. As of 1.4 I believe Go's maps uses power of two sizes for its hash tables. This allows a mask to be used to calculate the bucket index instead of a MOD instruction. Unfortunately, large data sets often require a much larger allocation than required. For example a 2 GB + 1 byte data structure will require 4 GB. (*needs to be confirmed*)
 
 4. No GC pauses. As of Go 1.4 Go's maps can be subject to significant GC pauses as the overflow pointers are scanned. The CHT has no overflow pointers and no pointers at all, unless you add them to the value you store. This may change in Go 1.5.
+
+5. Knobs and Dials. This CHT has a number of knobs you can tweak to get the effect you want
 
 Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by decreasing the load factor, increasing the number of hash tables, the number of slots per bucket, or both.
 
@@ -48,7 +52,7 @@ Goals For This Version
 * User selectable hash functions
 * Support for non power of two table size and therefore the use of mod to calculate a bucket index.
 * Production quality code with testing
-* 100% written in Go with no external dependencies (for the main package)
+* 100% written in Go with ~~no~~ few external dependencies (for the main package)
 
 Future Development
 ------------------
@@ -190,20 +194,26 @@ There is an example program which is useful or exploring the tuning of cuckoo ha
 
 	Usage of ./example:
 	  -a=false: automatic
-	  -b=10: buckets
+	  -b=31: buckets
 	  -base=1: base of fill series, -1 for random
+	  -cp="": write cpu profile to file
+	  -dg=false: dont't add hash tables automatically
 	  -flf=1: fill load factor
-	  -h="m332": name of hash function
+	  -fo=false: fill only
+	  -h="aes": name of hash function (aes or j264)
 	  -lf=0.96: maximum load factor
 	  -ll=-8000: lowest level
+	  -mp="": write memory profile to this file
 	  -nt=5: number of trials
 	  -pl=false: print level of each insert
-	  -ps=false: print summary for each trail
+	  -pr=false: print progress
+	  -ps=false: print stats at the end of all trails
+	  -pt=false: print summary for each trail
 	  -rb=true: random base
 	  -rr=true: random run
 	  -s=8: slots
 	  -sl=2000: starting level
-	  -t=8: tables
+	  -t=4: tables
 	  -v=false: verbose
 
 Let's take a simple example of a classic (two table) cuckoo table. This example creates a cuckoo hash table with 2 hash tables, 11 buckets, and 1 slot per bucket. The occupancy of the hash table won't exceed a load factor of greater than 40%.
@@ -242,7 +252,7 @@ Now let's look at cuckoo table can support a load factor of 99.9%, albeit with s
 	trials: c=&cuckoo.CuckooStat{BucketSize:16, Elements:1119595, Inserts:1119595, Attempts:17013688, Iterations:469042, Deletes:1119595, Lookups:1119595, Fails:0, Bumps:3554019, Aborts:0, MaxAttempts:0, MaxIterations:0, Limited:false}
 	leb% 
 
-The key number to look at here is the api which has moved from 1.20 on the classic hash table to a 15.20 here. Note that the hash algorithm has to try 15 locations on average to insert a key.
+The key number to look at here is the api which has moved from 1.20 on the classic hash table to a 15.20 here. So the CHT has to try 15 locations on average to insert a key.
 
 
 Implementation [Must Proofread]
@@ -284,16 +294,19 @@ I am lucky today.
 
 Implementation FAQ
 ------------------
-**Q**: Why do you use mod instead of power of two tables with a bit mask for bucket indexing?  
-**A**: This was a difficult decision. Calculating MOD is much slower than performing a masking AND operation. Also to (always) be considered are the processor memory caching effects. ‘MOD’ is slower than AND by an amount larger than an L1-miss-L2-hit time. So assuming that miss-hit pattern (unclear, depends on table size and other factors) it might be better to re-probe once than calculate the MOD.
+**Q** Why is delete so slow?
+**A** Two reasons. First, Go's map uses a trick where some of the hash bits are used to index into the slots, saving a scan of the slots. The CHT can't use that trick. Second, Go's map just sets a bit to delete a slot but the CHT currently copies the "empty key" into the key of the slot being deleted.
 
-I am interested in working with large datasets. In the end the main reason I choose MOD over power of two table sizes and AND masking is because the latter doesn't scale efficiently to large datasets. e.g. if I have a 16 GiB entry dataset and it grows ny one more entry, it will need a 32 GiB allocation and waste 16 GiB.
+**Q**: Why do you use mod instead of power of two tables with a bit mask for bucket indexing?  
+**A**: This was a difficult decision. Calculating MOD is much slower than performing a power of two masking AND operation. Also to (always) be considered are the memory caching effects. ‘MOD’ is slower than AND by an amount larger than an L1-miss-L2-hit time. So assuming that miss-hit pattern (unclear, depends on table size and other factors) it might be better to re-probe once than calculate the MOD.
+
+I am interested in working with large datasets. In the end the main reason I choose MOD over power of two table sizes with AND masking is because the latter doesn't scale efficiently to large datasets. e.g. if I have a 16 GB  dataset and it grows by one more entry, it will need a 32 GiB allocation and waste 16 GiB.
 
 **Q**: Don't you know MOD is slow?  
 **A**: Sure, but see above.
 
-**Q**: What hash function is used?
-**A**: You currently have a choice of an X86-64 accelerated 64 bit hash based on AES or Siphash also accelerated on X86-64 but has fallback to pure Go for platforms other than X86-64. 
+**Q**: What hash functions are used?
+**A**: You currently have a choice of an X86-64 accelerated 64 bit hash calculated using AESNI on X86-64 platforms. or Siphash also accelerated on X86-64 but has fallback to pure Go for platforms other than X86-64. 
 
 **Q**: Why is Delete so slow?  
 **A**: Essentially because Delete has to look is t * s places to find the key whereas Go's build in map only has to look in a single place. In the example benchmarks t == 2 and s == 8 so s * t == 16. Therefor on average Delete has to do 8 lookups to find the key. The speed of Delete can be increased by decreasing the number of slots and tables.

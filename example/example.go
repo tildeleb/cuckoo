@@ -48,6 +48,7 @@ var flf = flag.Float64("flf", 1.0, "fill load factor")
 var pl = flag.Bool("pl", false, "print level of each insert")
 var pt = flag.Bool("pt", false, "print summary for each trail")
 var ps = flag.Bool("ps", false, "print stats at the end of all trails")
+var pr = flag.Bool("pr", false, "print progress")
 var verbose = flag.Bool("v", false, "verbose")
 
 var cp = flag.String("cp", "", "write cpu profile to file")
@@ -144,19 +145,19 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 			fmt.Printf("trials: cucko hash table size=%H\n", sz)
 		}
 		durations[0] = tdiff(start, stop)
-		print(0, tables * buckets * slots,)
+		print(0, tables * buckets * slots)
 
 		// fill
 		//fmt.Printf("trials: fill\n")
 
 		runtime.ReadMemStats(&msb)
-		dump_mstats(&msa, true, false, false)
-		fmt.Printf("\n")
+		//dump_mstats(&msa, true, false, false)
+		//fmt.Printf("\n")
 		start = time.Now()
-		fs := dstest.Fill(c, tables, buckets, slots, ibase, *flf, verbose, *pl, r)
+		fs := dstest.Fill(c, tables, buckets, slots, ibase, *flf, verbose, *pl, *pr, r)
 		stop = time.Now()
 		runtime.ReadMemStats(&msa)
-		dump_mstats(&msa, true, false, false)
+		//dump_mstats(&msa, true, false, false)
 		bpi := float64(c.Bumps)/float64(c.Inserts)
 		api := float64(c.Attempts)/float64(c.Inserts)
 		ipi := float64(c.Iterations)/float64(c.Inserts)
@@ -177,7 +178,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		// verify
 		//fmt.Printf("trials: verify base=%d, n=%d\n", fs.Base, c.Elements)
 		start = time.Now()
-		dstest.Verify(c, fs.Base, c.Elements)
+		dstest.Verify(c, fs.Base, c.Elements, *pr)
 		stop = time.Now()
 		durations[2] = tdiff(start, stop)
 		print(2, fs.Used)
@@ -186,7 +187,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		// delete
 		//fmt.Printf("trials: delete\n")
 		start = time.Now()
-		ok := dstest.Delete(c, fs.Base, c.Elements, verbose)
+		ok := dstest.Delete(c, fs.Base, c.Elements, verbose, *pr)
 		if !ok || c.Elements != 0 {
 			s := fmt.Sprintf("Delete failed ok=%v, c.Elements=%d", ok, c.Elements)
 			fmt.Printf(s)

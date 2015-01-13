@@ -46,9 +46,8 @@ type FillStats struct {
 	Limited		bool
 }
 
-func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, printLevels, r bool) *FillStats {
+func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, printLevels, progress, r bool) *FillStats {
 	var fs FillStats
-
 	base := 0
 	if r {
 		base = rbetween(1, 1<<29)
@@ -66,11 +65,18 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	//fmt.Printf("_fill: base=%d, max=%d\n", base, max)
 	fs.Load = float64(1.0)
 	cnt := 1
+	svi := amax
+	lowestLevel := 1<<31
+	onep := (amax - base) / 100
+	thresh := onep
+
 	if verbose {
 		fmt.Printf("    fill: base=%d, n=%d\n", base, max)
 	}
-	svi := amax
-	lowestLevel := 1<<31
+	if progress {
+		fmt.Printf("F: ")
+	}
+
 	for i := base; i < amax; i++ {
 		//fmt.Printf("%d\n", i)
 		ok, l := d.InsertL(Key(i), Value(uint64(cnt)))
@@ -100,6 +106,13 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 			}
 		}
 		cnt++
+		if progress && cnt > thresh {
+			fmt.Printf("%%")
+			thresh += onep
+		}
+	}
+	if progress {
+		fmt.Printf("\n")
 	}
 	fs.LowestLevel = lowestLevel
 	fs.Load = float64(d.GetCounter("elements"))/float64(d.GetCounter("size"))
@@ -128,8 +141,8 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	return &fs
 }
 
-func Fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pl bool, r bool) *FillStats {
-	fs := _fill(d, tables, buckets, slots, ibase, flf, verbose, pl, r)
+func Fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pl, progress bool, r bool) *FillStats {
+	fs := _fill(d, tables, buckets, slots, ibase, flf, verbose, pl, progress, r)
 	if verbose {
 		for i := 0; i < tables; i++ {
 			fmt.Printf("    fill: table[%d]: %d/%d=%0.4f\n", i, d.GetTableCounter(i, "elements"), d.GetTableCounter(i, "size"), float64(d.GetTableCounter(i, "elements"))/float64(d.GetTableCounter(i, "size")))
@@ -139,8 +152,13 @@ func Fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pl 
 }
 
 // test lookup by looking for a sequence of keys and making sure the values match the keys
-func Verify(d DSTest, base, n int) bool {
+func Verify(d DSTest, base, n int, progress bool) bool {
 	//fmt.Printf("Verify: base=%d, n=%d \n", base, n)
+	if progress {
+		fmt.Printf("V: ")
+	}
+	onep := n / 100
+	thresh := onep
 	cnt := 0
 	for i := base; i < base + n; i++ {
 		cnt++
@@ -154,17 +172,39 @@ func Verify(d DSTest, base, n int) bool {
 			fmt.Printf("Verify: FAIL i=%d, cnt=%d != v=%d\n", i, cnt, uint64(v))
 			return false
 		}
+		if progress && cnt > thresh {
+			fmt.Printf("%%")
+			thresh += onep
+		}
+	}
+	if progress {
+		fmt.Printf("\n")
 	}
 	//fmt.Printf("Verify: OK\n")
 	return true
 }
 
-func Delete(d DSTest, base, n int, verbose bool) bool {
+func Delete(d DSTest, base, n int, verbose, progress bool) bool {
 	//fmt.Printf("delete from=%d, n=%d\n", base, n)
+
+	if progress {
+		fmt.Printf("D: ")
+	}
+	onep := n / 100
+	thresh := onep
+	cnt := 0
 	for i := base; i < base + n; i++ {
 		if _, b := d.Delete(Key(i)); !b {
 			return false
 		}
+		cnt++
+		if progress && cnt > thresh {
+			fmt.Printf("%%")
+			thresh += onep
+		}
+	}
+	if progress {
+		fmt.Printf("\n")
 	}
 	return true
 }

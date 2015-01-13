@@ -705,6 +705,10 @@ func (c *Cuckoo) InsertL(key Key, val Value) (ok bool, rlevel int) {
 }
 
 func (c *Cuckoo) Map(iter func(c *Cuckoo, key Key, val Value) (stop bool)) {
+	if c.emptyKeyValid {
+		iter(c, c.emptyKey, c.emptyValue)
+	}
+
 	for _, vt := range c.tbs {
 		for _, vb := range vt {
 			for _, vs := range vb {
@@ -718,6 +722,7 @@ func (c *Cuckoo) Map(iter func(c *Cuckoo, key Key, val Value) (stop bool)) {
 	}
 }
 
+// doesn't print the value if c.emptyKeyValid is true
 func (c *Cuckoo) Print() {
 	for t, vt := range c.tbs {
 		for b, vb := range vt {

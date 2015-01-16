@@ -68,7 +68,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	svi := amax
 	lowestLevel := 1<<31
 	onep := (amax - base) / 100
-	thresh := onep
+	thresh := 0
 
 	if verbose {
 		fmt.Printf("    fill: base=%d, n=%d\n", base, max)
@@ -91,8 +91,8 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 				if printLevels {
 					fmt.Printf("%d/%d\n", l, lowestLevel)
 				}
-				fmt.Printf("    fill: failed @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n",
-					i, amax, amax - i, d.GetCounter("bumps"), d.GetCounter("elements"), d.GetCounter("size"), fs.Load, l, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
+				fmt.Printf("    fill: failed @ %d/%d, remain=%d, MaxPathLen=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n",
+					i, amax, amax - i, d.GetCounter("MaxPathLen"), d.GetCounter("bumps"), d.GetCounter("elements"), d.GetCounter("size"), fs.Load, l, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
 			}
 			fs.Used = i - base
 			fs.Failed = true
@@ -105,11 +105,17 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 				fmt.Printf("%d/%d ", l, lowestLevel)
 			}
 		}
-		cnt++
-		if progress && cnt > thresh {
-			fmt.Printf("%%")
+		if progress && cnt >= thresh {
+			pcnt := cnt/onep
+			if pcnt%10 == 0 {
+				fmt.Printf("%d", pcnt/10)
+			} else {
+				fmt.Printf("%%")
+			}
+			//fmt.Printf("%d: MaxPathLen=%d\n", cnt/onep, d.GetCounter("MaxPathLen"))
 			thresh += onep
 		}
+		cnt++
 	}
 	if progress {
 		fmt.Printf("\n")
@@ -118,8 +124,8 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	fs.Load = float64(d.GetCounter("elements"))/float64(d.GetCounter("size"))
 	fs.Remaining = amax - svi
 	if verbose {
-		fmt.Printf("    fill: fail=%v @ %d/%d, remain=%d, bumps=%d, %d/%d=%0.4f, bpi=%0.2f\n",
-			fs.Failed, svi, amax, amax - svi, d.GetCounter("bumps"), d.GetCounter("inserts"), d.GetCounter("elements"), fs.Load, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
+		fmt.Printf("    fill: fail=%v @ %d/%d, remain=%d, MaxPathLen=%d, bumps=%d, %d/%d=%0.4f, bpi=%0.2f\n",
+			fs.Failed, svi, amax, amax - svi, d.GetCounter("MaxPathLen"), d.GetCounter("bumps"), d.GetCounter("inserts"), d.GetCounter("elements"), fs.Load, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
 	}
 	if fs.Remaining > Mr {
 		Mr = fs.Remaining

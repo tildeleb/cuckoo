@@ -50,6 +50,7 @@ type Counters struct {
 	Lookups			int		// number of lookups
 	Fails			int		// number of times that insert failed
 	Bumps			int		// number of evicted buckets
+	MaxPathLen		int		// longest chain of bumps
 	Aborts			int		// number of times an insert had to aborted
 	MaxAttempts		int		// highest number of attempts
 	MaxIterations	int		// highest number of interations
@@ -151,6 +152,8 @@ func (c *Cuckoo) GetCounter(s string) int {
 		return c.Elements
 	case "size":
 		return c.Size
+	case "MaxPathLen":
+		return c.MaxPathLen
 	default:
 		panic("GetCounter")
 	}
@@ -548,6 +551,7 @@ func (c *Cuckoo) Delete(key Key) (Value, bool) {
 func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 	var k Key
 	var v Value
+	var bumps int
 
 	var ins func(kx Key, vx Value) bool // forwqrd declare the closure so we can call it recursively
 	var _ = func() {
@@ -607,6 +611,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 				}
 			}
 			// no slots available in this table available, pick a random key to move to the next table
+			bumps++
 			c.Bumps++
 			c.TableCounters[t].Bumps++
 			victim := c.rbetween(0, c.Slots-1)
@@ -634,7 +639,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		}
 		if level <= 0 {
 			c.Aborts++
-			// sublte bug, on failure to insert the key not inserted may not be the original key
+			// fine point, on failure to insert the key not inserted may not be the original key
 			// so keep interating until the original key is not found to prevent random data loss
 			_, found := c.Lookup(key)
 			//fmt.Printf("key %d found=%v\n", key, found)
@@ -643,7 +648,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 				return false
 			}
 		}
-		return ins(k, v)
+		return ins(k, v) // try to insert again, tail recursively
 	}
 
 	// function starts here
@@ -687,6 +692,9 @@ again:
 	}
 	if level < c.MinLevel {
 		c.MinLevel = level
+	}
+	if bumps > c.MaxPathLen {
+		c.MaxPathLen = bumps
 	}
 	//fmt.Printf("%d/%d ", c.Attempts - sva, c.Iterations - svi)
 	return

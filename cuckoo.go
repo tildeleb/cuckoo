@@ -91,6 +91,8 @@ type Cuckoo struct {
 	tbs				[][]Buckets		// indexed defineBuckets defined in kv_array.go or kv_slice.go
 	r				uint64			// reciprocal of Buckets
 	n				uint64			// Size
+	rot 			int				// table rotator
+	fp 				bool			// first pass of table insert
 	Config							// config data
 	Counters						// stats
 	TableCounters	[]TableCounters	// per table stats
@@ -571,6 +573,8 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		k = kx // was :=
 		v = vx // was :=
 		for t, _ := range c.tbs {
+			t += c.rot
+			t %= c.Tables
 			//phv()
 			//b := c.hs[t]
 
@@ -696,6 +700,8 @@ again:
 	if bumps > c.MaxPathLen {
 		c.MaxPathLen = bumps
 	}
+	c.rot++
+	c.rot %= c.Tables
 	//fmt.Printf("%d/%d ", c.Attempts - sva, c.Iterations - svi)
 	return
 }

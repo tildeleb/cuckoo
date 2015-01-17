@@ -112,7 +112,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 			} else {
 				fmt.Printf("%%")
 			}
-			//fmt.Printf("%d: MaxPathLen=%d\n", cnt/onep, d.GetCounter("MaxPathLen"))
+			fmt.Printf("%d: MaxPathLen=%d\n", cnt/onep, d.GetCounter("MaxPathLen"))
 			thresh += onep
 		}
 		cnt++

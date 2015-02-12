@@ -15,7 +15,8 @@ import (
 	"flag"
 	"unsafe"
 	"runtime"
-	"math/rand"
+	_ "math/rand"
+	cr "crypto/rand"
 	"runtime/pprof"
 	"github.com/tildeleb/hrff"
 	"github.com/tildeleb/cuckoo"
@@ -29,11 +30,15 @@ func tdiff(begin, end time.Time) time.Duration {
     return d
 }
 
+var ranb = flag.Bool("rb", false, "ignore base, use random base value")
+var ranr = flag.Bool("rr", false, "random run, seed for base values is random")
+var rane = flag.Bool("re", false, "use a random seed for evictions source")
+var seedb = flag.Int("sb", 0, "seed for base values")
+var seede = flag.Int("se", 0, "seed for eviction values")
+
 var auto = flag.Bool("a", false, "automatic")
 var fo = flag.Bool("fo", false, "fill only")
 var dg = flag.Bool("dg", false, "dont't add hash tables automatically")
-var ranf = flag.Bool("rr", true, "random run")
-var ranb = flag.Bool("rb", true, "random base")
 var hash = flag.String("h", "aes", "name of hash function (aes or j264)")
 var ntables = flag.Int("t", 4, "tables")
 var nbuckets = flag.Int("b", 31, "buckets")
@@ -53,6 +58,9 @@ var verbose = flag.Bool("v", false, "verbose")
 
 var cp = flag.String("cp", "", "write cpu profile to file")
 var mp = flag.String("mp", "", "write memory profile to this file")
+
+var bseed = int64(0)	// seed for base values
+var cseed = int64(0)	// seed for evictions
 
 func statAdd(tot, add *cuckoo.Counters) {
 	tot.Elements += add.Elements
@@ -74,6 +82,18 @@ func hu(v uint64, u string) hrff.Int64 {
 func hi(v int64, u string) hrff.Int64 {
 	return hrff.Int64{V: int64(v), U: u}
 }
+
+/*
+func rbetween(r int, a int, b int) int {
+	rf := r.Float64()
+	diff := float64(b - a + 1)
+	r2 := rf * diff
+	r3 := r2 + float64(a)
+	ret := int(r3)
+	fmt.Printf("rbetween: a=%d, b=%d, rf=%f, diff=%f, r2=%f, r3=%f, ret=%d\n", a, b, rf, diff, r2, r3, ret)
+	return ret
+}
+*/
 
 func dump_mstats(m *runtime.MemStats, mstats, cstats, gc bool) {
 	if mstats {
@@ -101,9 +121,7 @@ func dump_mstats(m *runtime.MemStats, mstats, cstats, gc bool) {
 	}
 }
 
-
-
-func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (cs *cuckoo.Counters, avg float64, rmax int, fails int) {
+func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase int, verbose, ranr, ranb bool) (d *dstest.DSTest, cs *cuckoo.Counters, avg float64, rmax int, fails int) {
 	var key cuckoo.Key
 	var acs cuckoo.Counters
 	var labels = []string{"init", "fill", "verify", "delete", "verify"}
@@ -118,19 +136,39 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		}
 	}
 
-	dstest.Ll = *startLevel
 	cs = &acs
-
 	tot := float64(0)
 	fails = 0
+
+    if ranr {
+        bseed = time.Now().UTC().UnixNano()
+	    // fixed pattern or different values each time
+		b := make([]byte, 8)
+		_, err := cr.Read(b)
+		if err != nil {
+			fmt.Println("error:", err)
+			return
+		}
+		bseed = int64(uint64(b[0])<<56 | uint64(b[1])<<48 | uint64(b[2])<<40 | uint64(b[3])<<32 |
+					uint64(b[4])<<24 | uint64(b[5])<<16 | uint64(b[6])<<8  | uint64(b[7])<<0)
+    } else {
+        bseed = int64(*seedb)
+    }
+    //r := rand.New(rand.NewSource(int64(bseed)))
+    //rand.Seed(seed)
+
+	td := dstest.New(nil, *startLevel, 0)
 	for t := 0; t < trials; t++ {
 		// init
 		//fmt.Printf("trials: init\n")
 		start := time.Now()
-		c := cuckoo.New(tables, buckets, slots, lf, *hash)
+		c := cuckoo.New(tables, buckets, slots, int64(*seede), lf, *hash)
 		if c == nil {
 			panic("New failed")
 		}
+		d := dstest.New(c, *startLevel, bseed)
+		//d.I = c
+
 		siz := int(unsafe.Sizeof(key)); switch siz {
 		case 4, 8:
 			//fmt.Printf("Set SetNumericKeySize(%d)\n", siz)
@@ -142,7 +180,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		stop := time.Now()
 		if t == 0 {
 			sz := hrff.Int64{int64(c.Size * c.BucketSize), "bytes"}
-			fmt.Printf("trials: cucko hash table size=%H\n", sz)
+			fmt.Printf("trials: bseed=%#x, seede=%#x, cucko hash table size=%H\n", bseed, *seede, sz)
 		}
 		durations[0] = tdiff(start, stop)
 		print(0, tables * buckets * slots)
@@ -154,7 +192,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		//dump_mstats(&msa, true, false, false)
 		//fmt.Printf("\n")
 		start = time.Now()
-		fs := dstest.Fill(c, tables, buckets, slots, ibase, *flf, verbose, *pl, *pr, r)
+		fs := d.Fill(tables, buckets, slots, ibase, *flf, verbose, *pl, *pr, ranb)
 		stop = time.Now()
 		runtime.ReadMemStats(&msa)
 		//dump_mstats(&msa, true, false, false)
@@ -178,7 +216,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		// verify
 		//fmt.Printf("trials: verify base=%d, n=%d\n", fs.Base, c.Elements)
 		start = time.Now()
-		dstest.Verify(c, fs.Base, c.Elements, *pr)
+		d.Verify(fs.Base, c.Elements, *pr)
 		stop = time.Now()
 		durations[2] = tdiff(start, stop)
 		print(2, fs.Used)
@@ -187,7 +225,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		// delete
 		//fmt.Printf("trials: delete\n")
 		start = time.Now()
-		ok := dstest.Delete(c, fs.Base, c.Elements, verbose, *pr)
+		ok := d.Delete(fs.Base, c.Elements, verbose, *pr)
 		if !ok || c.Elements != 0 {
 			s := fmt.Sprintf("Delete failed ok=%v, c.Elements=%d", ok, c.Elements)
 			fmt.Printf(s)
@@ -199,6 +237,15 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 
 		c.Elements = savElements
 		statAdd(cs, &c.Counters)
+		if d.Ll < td.Ll {
+			td.Ll = d.Ll
+			//fmt.Printf("setting td.Ll=%d\n", td.Ll)
+		}
+		//fmt.Printf("change d.Mr=%d, td.Mr=%d\n", d.Mr, td.Mr)
+		if d.Mr > td.Mr {
+			td.Mr = d.Mr
+			//fmt.Printf("setting td.Mr=%d\n", td.Mr)
+		}
 
 		// print information about operational rates
 		if false {
@@ -217,11 +264,13 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 			fmt.Printf("trials: trial=%d, fails=%d, L=%v, F=%v, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxAttemps=%d, MaxIterations=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",
 				t, fails, fs.Limited, fs.Failed, fs.Remaining, c.Aborts, fs.LowestLevel, c.MaxAttempts, c.MaxIterations, bpi, api, ipi, float64(c.Elements)/float64(c.Size), c.Elements, c.Size)
 		}
+		bseed++
 		if verbose {
 			fmt.Printf("\n")
 		}
 	}
 	avg = tot / float64(trials)
+	d = td
 	//fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, trials=%d, fails=%d, avg=%0.2f\n", tables, buckets, slots, trials, fails, avg)
 	return // avg, max, fails
 }
@@ -231,15 +280,6 @@ func f() {
 }
 
 func runTrials() {
-   seed := int64(0)
-    // fixed pattern or different values each time
-    if *ranf {
-        seed = time.Now().UTC().UnixNano()
-    } else {
-        seed = int64(0)
-    }
-    rand.Seed(seed)
-
     //tables := []int{2, 3, 4, 5, 6, 7, 8}
     //slots := []int{1, 2, 3, 4, 5, 6, 7, 8}
 
@@ -278,13 +318,13 @@ func runTrials() {
     		nb = primes.NextPrime(-nb)
     	}
     	tot := *ntables * nb * *nslots
-		c, avg, max, fails := trials(*ntables, nb, *nslots, *ntrials, *lf, *ibase, *verbose, *ranb)
+		d, c, avg, max, fails := trials(*ntables, nb, *nslots, *ntrials, 0, *lf, *ibase, *verbose, *ranr, *ranb)
 		bpi := float64(c.Bumps)/float64(c.Inserts)
 		api := float64(c.Attempts)/float64(c.Inserts)
 		ipi := float64(c.Iterations)/float64(c.Inserts)
 
 		fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, avg=%0.4f\n", *ntables, nb, *nslots, tot, max, *ntrials, fails, avg)
-		fmt.Printf("trials: MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f\n", dstest.Mr, dstest.Ll, c.Aborts, bpi, api, ipi)
+		fmt.Printf("trials: MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f\n", d.Mr, d.Ll, c.Aborts, bpi, api, ipi)
 		//fmt.Printf("trials: MaxRemaining=%d\n", dstest.Mr)
 		//fmt.Printf("trials: LowestLevel=%d\n", dstest.Ll)
 		if *ps {

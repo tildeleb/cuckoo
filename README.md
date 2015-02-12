@@ -19,7 +19,7 @@ Go's builtin map is well designed and implemented. The author uses it all the ti
 
 4. No GC pauses. As of Go 1.4 Go's maps can be subject to significant GC pauses as the overflow pointers are scanned. The CHT has no overflow pointers and no pointers at all, unless you add them to the value you store. This may change in Go 1.5.
 
-5. Knobs and Dials. This CHT has a number of knobs you can tweak to get the effect you want
+5. Knobs and Dials. This CHT has a number of knobs you can tweak to get the results you want
 
 Load factors as high as .999 are achievable with the caveats that the amount of work per insertion increases as the hash table fills up (load factor increases) and the amount of work per delete increases with the number of hash tables and slots. The amount of work on Insert can be ameliorated by decreasing the load factor, increasing the number of hash tables, the number of slots per bucket, or both.
 
@@ -67,9 +67,9 @@ Bugs and Issues
 
 Example of a Pathological Case
 ------------------------------
-In the following example a cuckoo hash is constructed and 1 million trials are run doing inserts/verify/delete.. In all but a single case the cuckoo hash was able to achieve a load factor of 1.0, which means that the table was completely full with no collisions. In the single case that failed only a single insert, the final insert, could not be completed. This defines life with a cuckoo table.
+In the following example a 4 table x 11 buckets x 8 slot cuckoo hash is constructed and 1 million trials are run doing inserts/verify/delete.. In all but a single case the CHT was able to achieve a perfect load factor of 1.0, which means that the table was completely filled. In the single case that failed, only a single insert, the final insert, could not be completed. This defines life with a cuckoo table.
 
-If the single failure makes you unhappy I suggest you change the number of slots from 8 to 16 and see how many trials it takes to find a failure.
+If the single failure makes you unhappy I suggest you change the number of slots from 8 to 16 and investigate how many trials it takes to find a failure.
 
 	leb@hula:~/gotest/src/leb/cuckoo/example % time ./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true
 	trials: size=8 kbytes

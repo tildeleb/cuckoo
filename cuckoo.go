@@ -103,8 +103,9 @@ type Cuckoo struct {
 	//b				[]byte			// used for result of marshalled data
 	buf				*buf			// for marshalling data
 	encoder			*binary.Encoder	// encoder for serializing Key
-	rnd				func() float64	// random numbers for eviction
-	eseed			int64
+	//rnd				func() float64	// random numbers for eviction
+    rnd				*rand.Rand		// random numbers used for eviction
+	eseed			int64			// seed for evictions
 	emptyKey		Key				// empty key
 	emptyValue		Value			// if empty key store value lives here and not in a hash table
 	emptyKeyValid	bool			// something store here
@@ -180,7 +181,8 @@ func (c *Cuckoo) GetTableCounter(t int, s string) int {
 
 // This function used to select a victim bucket to be evicted.
 func (c *Cuckoo) rbetween(a int, b int) int {
-	rf := c.rnd()
+	//rf := c.rnd()
+	rf := c.rnd.Float64()
 	diff := float64(b - a + 1)
 	r2 := rf * diff
 	r3 := r2 + float64(a)
@@ -231,11 +233,12 @@ func (c *Cuckoo) addTable(growFactor int) {
 // Use hashName as the hash function.
 // If specified, use emptyKey as the key that signifies that an element is unused.
 // However, usually the default, the Go zero initization, is what you want.
-func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
+func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
 	var bs Buckets
 	var b Bucket
 	//var akey Key
 
+	//fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
 	if len(bs) > 0 && len(bs) != slots {
 		fmt.Printf("New: slot mismatch compiled slots=%d, requested slots=%d\n", len(bs), slots)
 		return nil
@@ -247,6 +250,11 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 		//fmt.Printf("buckets=%d, pbuckets=%d\n", buckets, pbuckets)
 		buckets = pbuckets
 	}
+	if tables <= 0 || buckets <= 0 || slots < 1 || loadFactor < 0.0 || loadFactor > 1.0 {
+		fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
+		return nil
+	}
+
 	//fmt.Printf("unsafe.Sizeof(akey)=%d\n", unsafe.Sizeof(akey))
 /*
 	c.b = make([]byte, unsafe.Sizeof(akey), unsafe.Sizeof(akey))
@@ -269,7 +277,13 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 		c.emptyKey = emptyKey[0]
 	}
 	c.ekiz = c.emptyKey == zeroKey
-	c.rnd = rand.Float64
+	//c.rnd = rand.Float64
+
+	c.eseed = int64(eseed)
+	src := rand.NewSource(int64(c.eseed))
+	r := rand.New(src)
+	c.rnd = r
+
 	c.BucketSize = int(unsafe.Sizeof(b))
 	c.BucketsSize = int(unsafe.Sizeof(bs))
 	c.TableCounters = make([]TableCounters, tables)
@@ -573,6 +587,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		k = kx // was :=
 		v = vx // was :=
 		for t, _ := range c.tbs {
+			// rotate which table we start inserts with
 			t += c.rot
 			t %= c.Tables
 			//phv()
@@ -635,14 +650,15 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 
 		// skip 0 because it's used as a signal that Insert failed because of load factor constraint
 		if level == 0 {
+			c.Aborts++
 			level = -1
 		}
 		if level <= c.LowestLevel {
+			c.Fails++
 			fmt.Printf("cukcoo: Insert FAILED, val=%v, key=%v\n", k, v)
 			return false
 		}
 		if level <= 0 {
-			c.Aborts++
 			// fine point, on failure to insert the key not inserted may not be the original key
 			// so keep interating until the original key is not found to prevent random data loss
 			_, found := c.Lookup(key)

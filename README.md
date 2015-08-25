@@ -11,7 +11,7 @@ Go's builtin map is well designed and implemented. The author uses it all the ti
 
 *Why use a CHT instead of Go's builtin map?*
 
-1. Memory Efficiency. In a benchmark below `map[uint64]uint64` the CHT used 6.5X (15 MiB vs 117 MiB) less memory than Go's built-in map at competitive speeds for insert and lookup. This is because you can tune CHT's key and value to your specific needs, while Go's map current uses a single hash table with 8 slots and an overflow pointer. For small lookup tables this means CHT stores more data in L1/L2/L3 cache. For larger tables it means greater overall memory efficiency.
+1. Memory Efficiency. In a benchmark below `map[uint64]uint64` the CHT used 4.0X (15 MiB vs 59 MiB) less memory than Go's built-in map at competitive speeds for insert and lookup. This is because you can tune CHT's key and value to your specific needs, while Go's map current uses a single hash table with 8 slots and an overflow pointer. For small lookup tables this means CHT stores more data in L1/L2/L3 cache. For larger tables it means greater overall memory efficiency.
 
 2. Memory Efficiency. In addition to being the above, a CHT can handle load factors as high as .999 with some tradeoff in insert efficiency. If you have a mostly read only data structure a CHT is perfect. Even if you don't, the knobs and dials in this implementation can be set to give you the insert efficiency you desire.
 
@@ -103,23 +103,23 @@ Benchmarks
 The following benchmark data is from a run on my MacBook Pro 2.5 GHz Core i7. The Cuckoo Hashtable configuration is 2 hash tables with 8 slots per bucket with the array optimization. Another optimization is turned on that marshals numeric quantities (currently 32 and 64 bit only) more efficiently than using the binary package.
 
 	leb@hula:~/gotest/src/github.com/tildeleb/cuckoo % go test -bench=. -v
-	=== RUN TestBasic-11
-	--- PASS: TestBasic-11 (0.41s)
-	=== RUN TestMemoryEfficiency-11
-	--- PASS: TestMemoryEfficiency-11 (0.56s)
-		cuckoo_test.go:147: Cuckoo Hash LoadFactor:       0.99
-		cuckoo_test.go:148: Cuckoo Hash memory allocated: 15 MiB
-		cuckoo_test.go:149: Go map memory allocated:      117 MiB
-	=== RUN: Example
+	=== RUN   TestBasic
+	--- PASS: TestBasic (0.34s)
+	=== RUN   TestMemoryEfficiency
+	--- PASS: TestMemoryEfficiency (0.46s)
+		cuckoo_test.go:151: Cuckoo Hash LoadFactor:       0.99
+		cuckoo_test.go:152: Cuckoo Hash memory allocated: 15 MiB
+		cuckoo_test.go:153: Go map memory allocated:      59 MiB
+	=== RUN   Example
 	--- PASS: Example (0.00s)
 	PASS
-	BenchmarkCuckoo2T2SInsert-11	 5000000	       242 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkCuckoo2T2SSearch-11	10000000	       172 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkCuckoo2T2SDelete-11	10000000	       308 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkGoMapInsert-11	 5000000	       264 ns/op	      33 B/op	       0 allocs/op
-	BenchmarkGoMapSearch-11	10000000	       144 ns/op	       0 B/op	       0 allocs/op
-	BenchmarkGoMapDelete-11	50000000	        22.8 ns/op	       0 B/op	       0 allocs/op
-	ok  	github.com/tildeleb/cuckoo	33.872s
+	BenchmarkCuckoo2T2SInsert-11	10000000	       191 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkCuckoo2T2SSearch-11	10000000	       146 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkCuckoo2T2SDelete-11	10000000	       305 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkGoMapInsert-11     	 5000000	       245 ns/op	      17 B/op	       0 allocs/op
+	BenchmarkGoMapSearch-11     	20000000	       144 ns/op	       0 B/op	       0 allocs/op
+	BenchmarkGoMapDelete-11     	100000000	        20.0 ns/op	       0 B/op	       0 allocs/op
+	ok  	github.com/tildeleb/cuckoo	26.872s
 	leb@hula:~/gotest/src/github.com/tildeleb/cuckoo % 
 
 Benchmarks Discussion

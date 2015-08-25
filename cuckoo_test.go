@@ -15,7 +15,7 @@ import "testing"
 
 var r = rand.Float64
 var b = int(0)
-var n = int(2e6)
+var n = int(1e6)
 
 const hashName = "aes" // aes" "j264"
 
@@ -72,6 +72,7 @@ func CreateKeysValuesMap(b, n int) *KeySet {
 
 	runtime.ReadMemStats(&msb)
 	ks.M = make(map[Key]Value)
+	//fmt.Printf("CreateKeysValuesMap: n=%d\n", n)
 	for i := b; i < b+n; i++ {
 		k := Key(rand.Uint32())
 		ks.M[k] = v
@@ -232,14 +233,17 @@ func BenchmarkCuckoo4T4SDelete(b *testing.B) {
 }
 */
 
+func GoMapInsert(m map[Key]Value, nn int) {
+	for i := 0; i < nn; i++ {
+		m[ks.Keys[i%n]] = ks.Vals[i%n]
+	}
+}
+
 func BenchmarkGoMapInsert(b *testing.B) {
 	m := make(map[Key]Value)
 	b.ResetTimer()
 	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		m[ks.Keys[i%n]] = ks.Vals[i%n]
-	}
+	GoMapInsert(m, b.N)
 }
 
 func BenchmarkGoMapSearch(b *testing.B) {

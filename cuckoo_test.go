@@ -3,10 +3,11 @@ package cuckoo_test
 
 import . "github.com/tildeleb/cuckoo"
 import . "github.com/tildeleb/cuckoo/dstest"
-import "github.com/tildeleb/hrff"
+import "leb.io/hrff"
 
 //import "flag"
 import "fmt"
+
 //import "math"
 import "math/rand"
 import "runtime"
@@ -15,14 +16,16 @@ import "testing"
 var r = rand.Float64
 var b = int(0)
 var n = int(2e6)
+
 const hashName = "aes" // aes" "j264"
 
 type KeySet struct {
-	Keys   		[]Key
-	Vals   		[]Value
-	M    		map[Key]Value
-	AllocBytes	uint64
+	Keys       []Key
+	Vals       []Value
+	M          map[Key]Value
+	AllocBytes uint64
 }
+
 var ks *KeySet
 
 func hu(v uint64, u string) hrff.Int64 {
@@ -61,15 +64,15 @@ func dump_mstats(m *runtime.MemStats, mstats, cstats, gc bool) {
 
 func CreateKeysValuesMap(b, n int) *KeySet {
 	var v Value
-    var msb, msa runtime.MemStats
-    var ks KeySet
+	var msb, msa runtime.MemStats
+	var ks KeySet
 
 	ks.Keys = make([]Key, n, n)
 	ks.Vals = make([]Value, n, n)
 
 	runtime.ReadMemStats(&msb)
 	ks.M = make(map[Key]Value)
-	for i := b; i < b + n; i++ {
+	for i := b; i < b+n; i++ {
 		k := Key(rand.Uint32())
 		ks.M[k] = v
 		ks.Keys[i] = k
@@ -100,19 +103,19 @@ func TestBasic(t *testing.T) {
 	const slots = 8
 	const n = 1000000
 
-	c := New(tables, -int(float64(n)*ef+add)/(tables * slots), slots, lf, hashName)
+	c := New(tables, -int(float64(n)*ef+add)/(tables*slots), slots, lf, hashName)
 	//t.Logf("Config=%#v\n", c.Config)
 	if c == nil {
 		t.Logf("New failed probably because slots don't match")
 		t.FailNow()
 	}
 	c.SetNumericKeySize(8)
-   	_ = Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false, false)
- 	ok := Verify(c, 1, n/(tables*slots), false)
- 	if !ok {
- 		t.FailNow()
- 	}
-   	//t.Logf("Stats=%#v\n", c.CuckooStat)
+	_ = Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false, false)
+	ok := Verify(c, 1, n/(tables*slots), false)
+	if !ok {
+		t.FailNow()
+	}
+	//t.Logf("Stats=%#v\n", c.CuckooStat)
 }
 
 func TestMemoryEfficiency(t *testing.T) {
@@ -123,10 +126,10 @@ func TestMemoryEfficiency(t *testing.T) {
 	const tables = 2
 	const slots = 8
 	const n = 1000000
-    var msb, msa runtime.MemStats
+	var msb, msa runtime.MemStats
 
 	runtime.ReadMemStats(&msb)
-	c := New(tables, -int(float64(n)*ef+add)/(tables * slots), slots, lf, hashName)
+	c := New(tables, -int(float64(n)*ef+add)/(tables*slots), slots, lf, hashName)
 	if c == nil {
 		t.Logf("New failed probably because slots don't match")
 		t.FailNow()
@@ -135,7 +138,7 @@ func TestMemoryEfficiency(t *testing.T) {
 	//for k, v := range ks.M {
 	//	c.Insert(k, v)
 	//}
-   	fs := Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false, true)
+	fs := Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false, true)
 	runtime.ReadMemStats(&msa)
 
 	//dump_mstats(&msb, true, false, false)
@@ -145,7 +148,7 @@ func TestMemoryEfficiency(t *testing.T) {
 	//fmt.Printf("msa=%#v\n", msa)
 
 	t.Logf("Cuckoo Hash LoadFactor:       %0.2f", c.GetLoadFactor())
-	t.Logf("Cuckoo Hash memory allocated: %0.0f MiB", float64(msa.Alloc - msb.Alloc)/float64(1<<20))
+	t.Logf("Cuckoo Hash memory allocated: %0.0f MiB", float64(msa.Alloc-msb.Alloc)/float64(1<<20))
 	t.Logf("Go map memory allocated:      %0.0f MiB", float64(ks.AllocBytes)/float64(1<<20))
 	//t.Logf("stats=%#v\n", fs)
 	fs.Fails = fs.Fails
@@ -155,7 +158,7 @@ func TestMemoryEfficiency(t *testing.T) {
 
 func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
 	//t.Logf("BenchmarkCuckooInsert: N=%d, ef=%f, add=%f, lf=%f, tables=%d, slots=%d\n", b.N, ef, add, lf, tables, slots)
-	c := New(tables, -int(float64(b.N)*ef+add)/(tables * slots), slots, lf, hash)
+	c := New(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
 	//fmt.Printf("Config=%#v\n", c.Config)
 	c.SetNumericKeySize(8)
 	//fmt.Printf("N=%d\n", b.N)
@@ -166,8 +169,8 @@ func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, 
 			c.Insert(ks.Keys[i%n], ks.Vals[i%n])
 		}
 	} else {
-	   	fs := Fill(c, tables, b.N, slots, 1, flf, false, false, false, true)
-	   	fs.Fails = fs.Fails
+		fs := Fill(c, tables, b.N, slots, 1, flf, false, false, false, true)
+		fs.Fails = fs.Fails
 		//b.Logf("stats=%#v\n", fs)
 	}
 	//fmt.Printf("Config=%#v\n", c.Config)
@@ -176,7 +179,7 @@ func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, 
 }
 
 func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	c := New(tables, -int(float64(b.N)*ef+add)/(tables * slots), slots, lf, hash)
+	c := New(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
 	c.SetNumericKeySize(8)
 	for i := 0; i < b.N; i++ {
 		c.Insert(ks.Keys[i%n], ks.Vals[i%n])
@@ -190,7 +193,7 @@ func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, 
 }
 
 func benchmarkCuckooDelete(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	c := New(tables, -int(float64(b.N)*ef+add)/(tables * slots), slots, lf, hash)
+	c := New(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
 	c.SetNumericKeySize(8)
 	for i := 0; i < b.N; i++ {
 		c.Insert(ks.Keys[i%n], ks.Vals[i%n])
@@ -202,7 +205,6 @@ func benchmarkCuckooDelete(ef, add, lf float64, tables, slots int, hash string, 
 		c.Delete(ks.Keys[i%n])
 	}
 }
-
 
 func BenchmarkCuckoo2T2SInsert(b *testing.B) {
 	benchmarkCuckooInsert(ef, add, lf, tables, slots, hashName, b)
@@ -240,7 +242,6 @@ func BenchmarkGoMapInsert(b *testing.B) {
 	}
 }
 
-
 func BenchmarkGoMapSearch(b *testing.B) {
 	m := make(map[Key]Value)
 
@@ -275,7 +276,7 @@ func Example() {
 	const buckets = 11
 	const slots = 8
 	//const hashName = "m332"
-	var lf = 0.95		// has to be a var or we get an err
+	var lf = 0.95 // has to be a var or we get an err
 	var cnt int
 
 	var countf = func(c *Cuckoo, key Key, val Value) (stop bool) {
@@ -289,7 +290,7 @@ func Example() {
 	}
 	c.SetNumericKeySize(8)
 
-	n := int(float64(tables * buckets * slots) * lf)
+	n := int(float64(tables*buckets*slots) * lf)
 
 	// insert
 	for i := 0; i < n; i++ {
@@ -343,5 +344,5 @@ func Example() {
 
 	fmt.Printf("Example: Passed\n")
 	// Output:
-    // Example: Passed
+	// Example: Passed
 }

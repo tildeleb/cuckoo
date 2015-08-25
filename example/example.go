@@ -7,26 +7,26 @@
 package main
 
 import (
-	"fmt"
-	_ "math"
-	"time"
-	"os"
-	"log"
 	"flag"
-	"unsafe"
-	"runtime"
-	"math/rand"
-	"runtime/pprof"
-	"github.com/tildeleb/hrff"
+	"fmt"
 	"github.com/tildeleb/cuckoo"
-	"github.com/tildeleb/cuckoo/primes"
 	"github.com/tildeleb/cuckoo/dstest"
+	"github.com/tildeleb/cuckoo/primes"
 	"github.com/tildeleb/cuckoo/siginfo"
+	"leb.io/hrff"
+	"log"
+	_ "math"
+	"math/rand"
+	"os"
+	"runtime"
+	"runtime/pprof"
+	"time"
+	"unsafe"
 )
 
 func tdiff(begin, end time.Time) time.Duration {
-    d := end.Sub(begin)
-    return d
+	d := end.Sub(begin)
+	return d
 }
 
 var auto = flag.Bool("a", false, "automatic")
@@ -101,14 +101,12 @@ func dump_mstats(m *runtime.MemStats, mstats, cstats, gc bool) {
 	}
 }
 
-
-
 func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, r bool) (cs *cuckoo.Counters, avg float64, rmax int, fails int) {
 	var key cuckoo.Key
 	var acs cuckoo.Counters
 	var labels = []string{"init", "fill", "verify", "delete", "verify"}
 	var durations = make([]time.Duration, 5)
-    var msb, msa runtime.MemStats
+	var msb, msa runtime.MemStats
 
 	var print = func(i, used int) {
 		if verbose {
@@ -131,21 +129,22 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		if c == nil {
 			panic("New failed")
 		}
-		siz := int(unsafe.Sizeof(key)); switch siz {
+		siz := int(unsafe.Sizeof(key))
+		switch siz {
 		case 4, 8:
 			//fmt.Printf("Set SetNumericKeySize(%d)\n", siz)
 			c.SetNumericKeySize(siz)
 		}
 		c.SetGrow(!*dg)
 		c.StartLevel = *startLevel
-    	c.LowestLevel = *lowLevel
+		c.LowestLevel = *lowLevel
 		stop := time.Now()
 		if t == 0 {
 			sz := hrff.Int64{int64(c.Size * c.BucketSize), "bytes"}
 			fmt.Printf("trials: cucko hash table size=%H\n", sz)
 		}
 		durations[0] = tdiff(start, stop)
-		print(0, tables * buckets * slots)
+		print(0, tables*buckets*slots)
 
 		// fill
 		//fmt.Printf("trials: fill\n")
@@ -158,9 +157,9 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		stop = time.Now()
 		runtime.ReadMemStats(&msa)
 		//dump_mstats(&msa, true, false, false)
-		bpi := float64(c.Bumps)/float64(c.Inserts)
-		api := float64(c.Attempts)/float64(c.Inserts)
-		ipi := float64(c.Iterations)/float64(c.Inserts)
+		bpi := float64(c.Bumps) / float64(c.Inserts)
+		api := float64(c.Attempts) / float64(c.Inserts)
+		ipi := float64(c.Iterations) / float64(c.Inserts)
 
 		rmax = fs.Thresh
 		durations[1] = tdiff(start, stop)
@@ -231,91 +230,90 @@ func f() {
 }
 
 func runTrials() {
-   seed := int64(0)
-    // fixed pattern or different values each time
-    if *ranf {
-        seed = time.Now().UTC().UnixNano()
-    } else {
-        seed = int64(0)
-    }
-    rand.Seed(seed)
+	seed := int64(0)
+	// fixed pattern or different values each time
+	if *ranf {
+		seed = time.Now().UTC().UnixNano()
+	} else {
+		seed = int64(0)
+	}
+	rand.Seed(seed)
 
-    //tables := []int{2, 3, 4, 5, 6, 7, 8}
-    //slots := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	//tables := []int{2, 3, 4, 5, 6, 7, 8}
+	//slots := []int{1, 2, 3, 4, 5, 6, 7, 8}
 
-    //st := 0
-    //ss := 0
-    siginfo.SetHandler(f)
-    fails := 0
-    //verbose := false
-    if *ntrials == 1 {
-    	*verbose = true
-    }
-/*
-    if *auto {
-    	maxAvg := float64(0)
-		for _, b := range primes.Primes {
-    		for t := 1; t <= *ntables; t++ {
-    			for s := 1; s <= *nslots; s++ {
-					//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d\n", t, b, s, *ntrials)
-    				_, avg, _, f := trials(t, b, s, *ntrials, *lf, 0, *verbose, *ranb)
-    				fails += f
- 					//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d\n", t, b, s, *ntrials)
-    				if avg > maxAvg {
-    					maxAvg = avg
-    					st = t
-    					ss = s
-    				}
-    			}
-    		}
-	    	fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d, fails=%d, avg=%0.4f\n", st, b, ss, *ntrials, fails, maxAvg)
-    		maxAvg = 0.0
-    	}
-    } else {
-*/
-    	nb := *nbuckets
-    	if nb < 0 {
-    		nb = primes.NextPrime(-nb)
-    	}
-    	tot := *ntables * nb * *nslots
-		c, avg, max, fails := trials(*ntables, nb, *nslots, *ntrials, *lf, *ibase, *verbose, *ranb)
-		bpi := float64(c.Bumps)/float64(c.Inserts)
-		api := float64(c.Attempts)/float64(c.Inserts)
-		ipi := float64(c.Iterations)/float64(c.Inserts)
+	//st := 0
+	//ss := 0
+	siginfo.SetHandler(f)
+	fails := 0
+	//verbose := false
+	if *ntrials == 1 {
+		*verbose = true
+	}
+	/*
+	       if *auto {
+	       	maxAvg := float64(0)
+	   		for _, b := range primes.Primes {
+	       		for t := 1; t <= *ntables; t++ {
+	       			for s := 1; s <= *nslots; s++ {
+	   					//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d\n", t, b, s, *ntrials)
+	       				_, avg, _, f := trials(t, b, s, *ntrials, *lf, 0, *verbose, *ranb)
+	       				fails += f
+	    					//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d\n", t, b, s, *ntrials)
+	       				if avg > maxAvg {
+	       					maxAvg = avg
+	       					st = t
+	       					ss = s
+	       				}
+	       			}
+	       		}
+	   	    	fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d, fails=%d, avg=%0.4f\n", st, b, ss, *ntrials, fails, maxAvg)
+	       		maxAvg = 0.0
+	       	}
+	       } else {
+	*/
+	nb := *nbuckets
+	if nb < 0 {
+		nb = primes.NextPrime(-nb)
+	}
+	tot := *ntables * nb * *nslots
+	c, avg, max, fails := trials(*ntables, nb, *nslots, *ntrials, *lf, *ibase, *verbose, *ranb)
+	bpi := float64(c.Bumps) / float64(c.Inserts)
+	api := float64(c.Attempts) / float64(c.Inserts)
+	ipi := float64(c.Iterations) / float64(c.Inserts)
 
-		fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, avg=%0.4f\n", *ntables, nb, *nslots, tot, max, *ntrials, fails, avg)
-		fmt.Printf("trials: MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f\n", dstest.Mr, dstest.Ll, c.Aborts, bpi, api, ipi)
-		//fmt.Printf("trials: MaxRemaining=%d\n", dstest.Mr)
-		//fmt.Printf("trials: LowestLevel=%d\n", dstest.Ll)
-		if *ps {
-			fmt.Printf("trials: c=%#v\n", c)
-		}
-//	}
+	fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, avg=%0.4f\n", *ntables, nb, *nslots, tot, max, *ntrials, fails, avg)
+	fmt.Printf("trials: MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f\n", dstest.Mr, dstest.Ll, c.Aborts, bpi, api, ipi)
+	//fmt.Printf("trials: MaxRemaining=%d\n", dstest.Mr)
+	//fmt.Printf("trials: LowestLevel=%d\n", dstest.Ll)
+	if *ps {
+		fmt.Printf("trials: c=%#v\n", c)
+	}
+	//	}
 }
 
-
-func main () {
+func main() {
 	flag.Parse()
-    if *mp != "" {
-        f, err := os.Create(*mp)
-        if err != nil {
-            log.Fatal(err)
-        }
+	if *mp != "" {
+		f, err := os.Create(*mp)
+		if err != nil {
+			log.Fatal(err)
+		}
 		runTrials()
-        pprof.WriteHeapProfile(f)
-        f.Close()
-        return
-    }
+		pprof.WriteHeapProfile(f)
+		f.Close()
+		return
+	}
 
-    if *cp != "" {
-        f, err := os.Create(*cp)
-        if err != nil {
-            log.Fatal(err)
-        }
+	if *cp != "" {
+		f, err := os.Create(*cp)
+		if err != nil {
+			log.Fatal(err)
+		}
 		runTrials()
-        pprof.StartCPUProfile(f)
-        defer pprof.StopCPUProfile()
-        return
-    }
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+		return
+	}
 	runTrials()
- }
+}

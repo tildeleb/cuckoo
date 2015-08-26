@@ -7,18 +7,18 @@
 package cuckoo
 
 import (
-	"fmt"
-	_ "math"
-	"hash"
 	_ "bytes"
-	"math/rand"
 	_ "encoding/binary"
-	_ "github.com/tildeleb/cuckoo/murmur3"
-	_ "github.com/tildeleb/cuckoo/jk3"
-	_ "github.com/tildeleb/cuckoo/jenkins264"
-	"github.com/tildeleb/hashland/aeshash" // no longer self contained package
-	"github.com/tildeleb/cuckoo/primes"
+	"fmt"
 	"github.com/alecthomas/binary"
+	_ "github.com/tildeleb/cuckoo/jenkins264"
+	_ "github.com/tildeleb/cuckoo/jk3"
+	_ "github.com/tildeleb/cuckoo/murmur3"
+	"github.com/tildeleb/cuckoo/primes"
+	"github.com/tildeleb/hashland/aeshash" // no longer self contained package
+	"hash"
+	_ "math"
+	"math/rand"
 	"unsafe"
 )
 
@@ -29,95 +29,95 @@ type Container interface {
 	Map(iter func(key Key, val Value) (stop bool))
 }
 
-var zeroKey	Key
+var zeroKey Key
 var zeroVal Value
 
 // For historical reasons this is called a Bucket but should really be called an element
 type Bucket struct {
-	key		Key
-	val		Value
+	key Key
+	val Value
 }
 
 // Counters. All public but we now have an API to access them.
 type Counters struct {
-	BucketSize		int		// size of a single bucket (1 slot) in bytes
-	BucketsSize		int		// size of a single bucket * slots
-	Elements		int		// number of elements currently residing in the data structure
-	Inserts			int		// number of time insert has been called
-	Attempts		int		// number of attempts to insert all elements
-	Iterations		int		// number of iterations through all the hash tables to attemps an insert
-	Deletes			int		// number of times delete has been called
-	Lookups			int		// number of lookups
-	Fails			int		// number of times that insert failed
-	Bumps			int		// number of evicted buckets
-	MaxPathLen		int		// longest chain of bumps
-	Aborts			int		// number of times an insert had to aborted
-	MaxAttempts		int		// highest number of attempts
-	MaxIterations	int		// highest number of interations
-	MinLevel		int		// lowest level achieved
-	Limited			bool	// were inserts limited by a load factor
+	BucketSize    int  // size of a single bucket (1 slot) in bytes
+	BucketsSize   int  // size of a single bucket * slots
+	Elements      int  // number of elements currently residing in the data structure
+	Inserts       int  // number of time insert has been called
+	Attempts      int  // number of attempts to insert all elements
+	Iterations    int  // number of iterations through all the hash tables to attemps an insert
+	Deletes       int  // number of times delete has been called
+	Lookups       int  // number of lookups
+	Fails         int  // number of times that insert failed
+	Bumps         int  // number of evicted buckets
+	MaxPathLen    int  // longest chain of bumps
+	Aborts        int  // number of times an insert had to aborted
+	MaxAttempts   int  // highest number of attempts
+	MaxIterations int  // highest number of interations
+	MinLevel      int  // lowest level achieved
+	Limited       bool // were inserts limited by a load factor
 }
 
 // Per table stats, again all public.
 type TableCounters struct {
-	Size			int		// c.Buckets * c.Slots
-	Elements		int		// number of elements currently residing in this hash table
-	Bumps			int		// number of evicted buckets
+	Size     int // c.Buckets * c.Slots
+	Elements int // number of elements currently residing in this hash table
+	Bumps    int // number of evicted buckets
 }
 
 // These two constants seem to work well for many cases, but not all
 const (
-	InitialStartLevel = 2000
+	InitialStartLevel  = 2000
 	InitialLowestLevel = -8000
 )
 
 // Configuration info for the cucko hash is collected in this structure.
 // All fields are exported/public.
 type Config struct {
-	MaxLoadFactor	float64	// don't allow more than MaxElements = Tables * Buckets * Slots elements
-	StartLevel		int		// starting value for level which is decremented for each insertion attempt
-	LowestLevel		int		// This is usually a negative number and defines how far level can be decremented
-	Tables			int		// number of hash tables
-	Buckets			int		// number of buckets
-	Slots			int		// number of slots
-	Size			int		// Size = Tables * Buckets * Slots
-	MaxElements		int		// maximum number of elements the data structure can hold
-	HashName		string	// name of hashing function used
+	MaxLoadFactor float64 // don't allow more than MaxElements = Tables * Buckets * Slots elements
+	StartLevel    int     // starting value for level which is decremented for each insertion attempt
+	LowestLevel   int     // This is usually a negative number and defines how far level can be decremented
+	Tables        int     // number of hash tables
+	Buckets       int     // number of buckets
+	Slots         int     // number of slots
+	Size          int     // Size = Tables * Buckets * Slots
+	MaxElements   int     // maximum number of elements the data structure can hold
+	HashName      string  // name of hashing function used
 }
 
 // The main data structure for cuckoo hash.
 // Most fields are private but the counters are public.
 type Cuckoo struct {
-	tbs				[][]Buckets		// indexed defineBuckets defined in kv_array.go or kv_slice.go
-	r				uint64			// reciprocal of Buckets
-	n				uint64			// Size
-	Config							// config data
-	Counters						// stats
-	TableCounters	[]TableCounters	// per table stats
-	hashno			int				// hash function
-	seeds			[]uint64		// seeds used per table
-	hf				[]hash.Hash64	// one for each table + the last one reserved for fingerprints
-	hs				[]uint64		// hash sums for each table and fingerprint
+	tbs           [][]Buckets     // indexed defineBuckets defined in kv_array.go or kv_slice.go
+	r             uint64          // reciprocal of Buckets
+	n             uint64          // Size
+	Config                        // config data
+	Counters                      // stats
+	TableCounters []TableCounters // per table stats
+	hashno        int             // hash function
+	seeds         []uint64        // seeds used per table
+	hf            []hash.Hash64   // one for each table + the last one reserved for fingerprints
+	hs            []uint64        // hash sums for each table and fingerprint
 	//b				[]byte			// used for result of marshalled data
-	buf				*buf			// for marshalling data
-	encoder			*binary.Encoder	// encoder for serializing Key
-	rnd				func() float64	// random numbers for eviction
-	eseed			int64
-	emptyKey		Key				// empty key
-	emptyValue		Value			// if empty key store value lives here and not in a hash table
-	emptyKeyValid	bool			// something store here
-	ekiz			bool			// empty key is zero
-	grow			bool			// are we allowed to add a hash table as needed?
-	NumericKeySize	int				// if key is numeric what is size in bytes
+	buf            *buf            // for marshalling data
+	encoder        *binary.Encoder // encoder for serializing Key
+	rnd            func() float64  // random numbers for eviction
+	eseed          int64
+	emptyKey       Key   // empty key
+	emptyValue     Value // if empty key store value lives here and not in a hash table
+	emptyKeyValid  bool  // something store here
+	ekiz           bool  // empty key is zero
+	grow           bool  // are we allowed to add a hash table as needed?
+	NumericKeySize int   // if key is numeric what is size in bytes
 }
 
 // Simple struct and a couple of methods that satisfy the io.Writer interface.
 // buf saves the data in a slice that can be accessed without a copy.
 // Used to serialize the key.
 type buf struct {
-	b []byte
+	b    []byte
 	base [4096]byte
-	i int
+	i    int
 }
 
 func (b *buf) Reset() {
@@ -133,7 +133,7 @@ func newBuf(size int) (b *buf) {
 
 // capture io.Writer data in a slice
 func (b *buf) Write(p []byte) (n int, err error) {
-	b.b = b.base[b.i:b.i+len(p)]
+	b.b = b.base[b.i : b.i+len(p)]
 	copy(b.b, p)
 	b.i += len(p)
 	//fmt.Printf("Write: len(b.b)=%d, len(p)=%d, % #X\n", len(b.b), len(p), p)
@@ -189,20 +189,20 @@ func (c *Cuckoo) rbetween(a int, b int) int {
 
 // Add a hash function to a slice of hash functions.
 func (c *Cuckoo) addHash() {
-	c.seeds = append(c.seeds, uint64(len(c.seeds) + 1))
-	c.hf = append(c.hf, getHash(c.HashName, uint64(c.seeds[len(c.seeds) - 1])))
+	c.seeds = append(c.seeds, uint64(len(c.seeds)+1))
+	c.hf = append(c.hf, getHash(c.HashName, uint64(c.seeds[len(c.seeds)-1])))
 	c.hs = append(c.hs, 0)
 	c.TableCounters = append(c.TableCounters, TableCounters{Size: c.Buckets * c.Slots})
 	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 	//fmt.Printf("c.hf=%#v\n", c.hf)
 	//fmt.Printf("c.TableStats=%#v\n", c.TableStats)
-/*
-	if len(c.seeds) > 1 {
-		c.seeds[0], c.seeds[len(c.seeds) - 1] = c.seeds[len(c.seeds) - 1], c.seeds[0]
-		c.hf[0], c.hf[len(c.hf) - 1] = c.hf[len(c.hf) - 1], c.hf[0]
-		c.hs[0], c.hs[len(c.hs) - 1] = c.hs[len(c.hs) - 1], c.hs[0]
-	}
-*/
+	/*
+		if len(c.seeds) > 1 {
+			c.seeds[0], c.seeds[len(c.seeds) - 1] = c.seeds[len(c.seeds) - 1], c.seeds[0]
+			c.hf[0], c.hf[len(c.hf) - 1] = c.hf[len(c.hf) - 1], c.hf[0]
+			c.hs[0], c.hs[len(c.hs) - 1] = c.hs[len(c.hs) - 1], c.hs[0]
+		}
+	*/
 }
 
 // Dynamicall exapnd the data structure by adding a hash table. Called from Insert and friends.
@@ -246,15 +246,15 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 		buckets = pbuckets
 	}
 	//fmt.Printf("unsafe.Sizeof(akey)=%d\n", unsafe.Sizeof(akey))
-/*
-	c.b = make([]byte, unsafe.Sizeof(akey), unsafe.Sizeof(akey))
-	c.b = c.b[:]
-*/
+	/*
+		c.b = make([]byte, unsafe.Sizeof(akey), unsafe.Sizeof(akey))
+		c.b = c.b[:]
+	*/
 	c.hashno = setHash(hashName)
 	c.buf = newBuf(2048)
 	c.encoder = binary.NewEncoder(c.buf)
 	c.grow = true
-	c.Tables, c.Buckets, c.Slots =  tables, buckets, slots
+	c.Tables, c.Buckets, c.Slots = tables, buckets, slots
 	c.n = uint64(buckets)
 	c.r = uint64(4294967296) / c.n // reciprocal of buckets
 	c.StartLevel, c.LowestLevel = InitialStartLevel, InitialLowestLevel
@@ -339,21 +339,21 @@ func (c *Cuckoo) SetGrow(b bool) {
 // Set if hash tables can be added dynamically if an insert fails.
 func (c *Cuckoo) SetEvictionSeed(seed int64) {
 	c.eseed = seed
-    rand.Seed(seed)
+	rand.Seed(seed)
 }
 
 /*
-    seed := int64(0)
-    // fixed pattern or different values each time
-    if *ranf {
-        seed = time.Now().UTC().UnixNano()
-    } else {
-        seed = int64(0)
-    }
-    rand.Seed(seed)
+   seed := int64(0)
+   // fixed pattern or different values each time
+   if *ranf {
+       seed = time.Now().UTC().UnixNano()
+   } else {
+       seed = int64(0)
+   }
+   rand.Seed(seed)
 */
 
-func  (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
+func (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
 	if c.NumericKeySize == 4 && c.hashno == aes {
 		ui32tob(c.buf.b, key)
 		h = aeshash.Hash32(uint32(key), seed)
@@ -389,11 +389,11 @@ func  (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
 		//} else {
 		//h = jenkins264.Hash(c.buf.b, seed) % uint64(c.Buckets)
 		//}
-/*
-			h = uint64(murmur3.Sum32(c.b, uint32(seed))) % uint64(c.Buckets)
-		case "j332":
-			h = jenkins3.Sum32(c.b, seed) % uint32(c.Buckets)
-*/
+		/*
+				h = uint64(murmur3.Sum32(c.b, uint32(seed))) % uint64(c.Buckets)
+			case "j332":
+				h = jenkins3.Sum32(c.b, seed) % uint32(c.Buckets)
+		*/
 	}
 	return
 }
@@ -418,7 +418,7 @@ func ui64tob2(b []byte, key Key) {
 // Given a key and a hash function to use, calculate the hash for the specified table.
 // To do this we have to serialize the key
 // To get this to inline the optimization for NumericKeySize == 4 was moved to _calcHash
-func  (c *Cuckoo) calcHash(hf hash.Hash64, seed uint64, key Key) uint64 {
+func (c *Cuckoo) calcHash(hf hash.Hash64, seed uint64, key Key) uint64 {
 	// speed up a common key case
 	if c.NumericKeySize == 8 && c.hashno == aes {
 		//fmt.Printf("8")
@@ -431,9 +431,10 @@ func  (c *Cuckoo) calcHash(hf hash.Hash64, seed uint64, key Key) uint64 {
 }
 
 // Given key calculate the hash for the specified table
-func  (c *Cuckoo) calcHashForTable(t int, key Key) uint64 {
+func (c *Cuckoo) calcHashForTable(t int, key Key) uint64 {
 	return c.calcHash(c.hf[t], c.seeds[t], key)
 }
+
 // end inlined functions
 
 /*
@@ -443,14 +444,13 @@ func  (c *Cuckoo) calcHashForTable(t int, key Key) {
 */
 
 // Calculate hashes for key for all hash tables. No longer used.
-func  (c *Cuckoo) calcHashes(key Key) {
+func (c *Cuckoo) calcHashes(key Key) {
 	// calculate hashes for each table
 	for k, v := range c.hf {
 		c.hs[k] = c.calcHash(v, c.seeds[k], key)
 		//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
 	}
 }
-
 
 // Given key return the value and a "ok" bool indicating success or failure.
 func (c *Cuckoo) Lookup(key Key) (Value, bool) {
@@ -474,21 +474,21 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 		// L1 fit 11.345 total vs 12.113 total
 		// L2 fit 1:00.74 total vs 1:02.49 total
 
-/*
-		b := h - ((c.r * h) >> 32) * c.n
-		if b > c.n {
-			b -= c.n
-		}
-*/
+		/*
+			b := h - ((c.r * h) >> 32) * c.n
+			if b > c.n {
+				b -= c.n
+			}
+		*/
 		h := uint64(c.calcHashForTable(t, key))
 		b := h % uint64(c.Buckets)
 
-/*
-		bb := uint32(b)
-		if ba != bb {
-			fmt.Printf("ba=%d, bb=%d\n", ba, bb)
-		}
-*/
+		/*
+			bb := uint32(b)
+			if ba != bb {
+				fmt.Printf("ba=%d, bb=%d\n", ba, bb)
+			}
+		*/
 
 		for s, _ := range c.tbs[t][b] {
 			//fmt.Printf("Lookup: key=%d, table=%d, bucket=%d, slot=%d, found key=%d\n", key, t, b, s, c.tbs[t][b][s].key)
@@ -521,18 +521,18 @@ func (c *Cuckoo) Delete(key Key) (Value, bool) {
 	for t, _ := range c.tbs {
 		b := c.calcHashForTable(t, key) % uint64(c.Buckets)
 		//b := c.hs[t]
-/*
-		h := uint64(c.calcHashForTable(t, key))
-		b := h - ((c.r * h) >> 32) * c.n
-		if b > c.n {
-			b -= c.n
-		}
-*/
+		/*
+			h := uint64(c.calcHashForTable(t, key))
+			b := h - ((c.r * h) >> 32) * c.n
+			if b > c.n {
+				b -= c.n
+			}
+		*/
 		for s, _ := range c.tbs[t][b] {
 			//fmt.Printf("Delete: check key=%d, table=%d, bucket=%d, slot=%d, found key=%d\n", key, t, b, s, c.tbs[t][b][s].key)
 			if c.tbs[t][b][s].key == key {
 				//fmt.Printf("Delete: found key=%d, value=%d, table=%d, bucket=%d, slot=%d\n", key, c.tbs[t][b][s].val, t, b, s)
-				c.tbs[t][b][s].key = c.emptyKey 
+				c.tbs[t][b][s].key = c.emptyKey
 				c.TableCounters[t].Elements--
 				c.Elements--
 				if c.Elements < 0 {
@@ -576,12 +576,12 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 
 			//ha := c.calcHashForTable(t, k)
 			//ba := ha % uint32(c.Buckets)
-/*
-			b := h - ((c.r * h) >> 32) * c.n
-			if b > c.n {
-				b -= c.n
-			}
-*/
+			/*
+				b := h - ((c.r * h) >> 32) * c.n
+				if b > c.n {
+					b -= c.n
+				}
+			*/
 
 			//h := uint64(v)
 
@@ -600,7 +600,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			for s, _ := range c.tbs[t][b] {
 				c.Attempts++
 				pk := c.tbs[t][b][s].key
-				if pk == c.emptyKey || pk == k  {	// added replacement semantics
+				if pk == c.emptyKey || pk == k { // added replacement semantics
 					c.tbs[t][b][s].key, c.tbs[t][b][s].val = k, v
 					if pk == c.emptyKey || pk == k {
 						//fmt.Printf("Insert: h=%#x, level=%d, table=%d, bucket=%d, slot=%d, pk=%d, key=%d, value=%d\n", h, level, t, b, s, pk, k, v)
@@ -684,10 +684,10 @@ again:
 			goto again
 		}
 	}
-	if c.Attempts - sva > c.MaxAttempts {
+	if c.Attempts-sva > c.MaxAttempts {
 		c.MaxAttempts = c.Attempts - sva
 	}
-	if c.Iterations - svi > c.MaxIterations {
+	if c.Iterations-svi > c.MaxIterations {
 		c.MaxIterations = c.Iterations - svi
 	}
 	if level < c.MinLevel {

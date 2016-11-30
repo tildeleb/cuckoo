@@ -5,7 +5,7 @@ package dstest
 
 import "fmt"
 import "math/rand"
-import . "github.com/tildeleb/cuckoo"
+import . "leb.io/cuckoo"
 
 var Mr int
 var Ll int
@@ -34,16 +34,16 @@ func rbetween(a int, b int) int {
 
 // return information about what happened during a fill
 type FillStats struct {
-	Load		float64
-	Base		int
-	Total 		int
-	Thresh		int
-	Used		int
-	Remaining	int
-	LowestLevel	int
-	Fails		int
-	Failed		bool
-	Limited		bool
+	Load        float64
+	Base        int
+	Total       int
+	Thresh      int
+	Used        int
+	Remaining   int
+	LowestLevel int
+	Fails       int
+	Failed      bool
+	Limited     bool
 }
 
 func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, printLevels, progress, r bool) *FillStats {
@@ -66,7 +66,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	fs.Load = float64(1.0)
 	cnt := 1
 	svi := amax
-	lowestLevel := 1<<31
+	lowestLevel := 1 << 31
 	onep := (amax - base) / 100
 	thresh := 0
 
@@ -80,7 +80,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	for i := base; i < amax; i++ {
 		//fmt.Printf("%d\n", i)
 		ok, l := d.InsertL(Key(i), Value(uint64(cnt)))
-		if  l < lowestLevel && l != 0 {
+		if l < lowestLevel && l != 0 {
 			lowestLevel = l
 		}
 		if !ok {
@@ -92,7 +92,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 					fmt.Printf("%d/%d\n", l, lowestLevel)
 				}
 				fmt.Printf("    fill: failed @ %d/%d, remain=%d, MaxPathLen=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n",
-					i, amax, amax - i, d.GetCounter("MaxPathLen"), d.GetCounter("bumps"), d.GetCounter("elements"), d.GetCounter("size"), fs.Load, l, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
+					i, amax, amax-i, d.GetCounter("MaxPathLen"), d.GetCounter("bumps"), d.GetCounter("elements"), d.GetCounter("size"), fs.Load, l, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
 			}
 			fs.Used = i - base
 			fs.Failed = true
@@ -106,7 +106,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 			}
 		}
 		if progress && cnt >= thresh {
-			pcnt := cnt/onep
+			pcnt := cnt / onep
 			if pcnt%10 == 0 {
 				fmt.Printf("%d", pcnt/10)
 			} else {
@@ -121,11 +121,11 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 		fmt.Printf("\n")
 	}
 	fs.LowestLevel = lowestLevel
-	fs.Load = float64(d.GetCounter("elements"))/float64(d.GetCounter("size"))
+	fs.Load = float64(d.GetCounter("elements")) / float64(d.GetCounter("size"))
 	fs.Remaining = amax - svi
 	if verbose {
 		fmt.Printf("    fill: fail=%v @ %d/%d, remain=%d, MaxPathLen=%d, bumps=%d, %d/%d=%0.4f, bpi=%0.2f\n",
-			fs.Failed, svi, amax, amax - svi, d.GetCounter("MaxPathLen"), d.GetCounter("bumps"), d.GetCounter("inserts"), d.GetCounter("elements"), fs.Load, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
+			fs.Failed, svi, amax, amax-svi, d.GetCounter("MaxPathLen"), d.GetCounter("bumps"), d.GetCounter("inserts"), d.GetCounter("elements"), fs.Load, float64(d.GetCounter("bumps"))/float64(d.GetCounter("inserts")))
 	}
 	if fs.Remaining > Mr {
 		Mr = fs.Remaining
@@ -137,11 +137,11 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 		fmt.Printf("\n")
 	}
 	//fmt.Printf("\n")
-/*
-	if level == -8000 {
-		panic("_fill")
-	}
-*/
+	/*
+		if level == -8000 {
+			panic("_fill")
+		}
+	*/
 	//avg := tot / float64(trials)
 	//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d, avg=%0.2f\n", tables, buckets, slots, trials, avg)
 	return &fs
@@ -166,7 +166,7 @@ func Verify(d DSTest, base, n int, progress bool) bool {
 	onep := n / 100
 	thresh := onep
 	cnt := 0
-	for i := base; i < base + n; i++ {
+	for i := base; i < base+n; i++ {
 		cnt++
 		v, ok := d.Lookup(Key(i))
 		if !ok {
@@ -199,7 +199,7 @@ func Delete(d DSTest, base, n int, verbose, progress bool) bool {
 	onep := n / 100
 	thresh := onep
 	cnt := 0
-	for i := base; i < base + n; i++ {
+	for i := base; i < base+n; i++ {
 		if _, b := d.Delete(Key(i)); !b {
 			return false
 		}

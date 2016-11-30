@@ -7,12 +7,12 @@ package cuckoo
 import (
 	_ "fmt"
 	"hash"
-	_ "github.com/tildeleb/cuckoo/jenkins264"
-	_ "github.com/tildeleb/hashland/aeshash"
+	_ "leb.io/aeshash"
+	_ "leb.io/cuckoo/jenkins264"
 )
 
 const (
-	aes = 1
+	aes  = 1
 	j264 = 2
 )
 

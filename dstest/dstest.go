@@ -71,7 +71,7 @@ func _fill(d DSTest, tables, buckets, slots, ibase int, flf float64, verbose, pr
 	thresh := 0
 
 	if verbose {
-		fmt.Printf("    fill: base=%d, n=%d\n", base, max)
+		fmt.Printf("    fill: base=%d, amax=%d, n=%d\n", base, amax, amax-base)
 	}
 	if progress {
 		fmt.Printf("F: ")

@@ -485,7 +485,7 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 		//ha := c.calcHashForTable(t, key)
 		//ba := ha % uint32(c.Buckets)
 
-		// this was a test to see if pre-calculating the reciprocal would be faster than MOD
+		// this was an experiment to see if pre-calculating the reciprocal would be faster than MOD
 		// it is by 10% for L1 fit and 3% for L2 fit, however switching to assembly might make it better than that.
 		// L1 fit 11.345 total vs 12.113 total
 		// L2 fit 1:00.74 total vs 1:02.49 total
@@ -564,6 +564,7 @@ func (c *Cuckoo) Delete(key Key) (Value, bool) {
 
 // Internal version of insert routine.
 // Given key, value, and a starting level insert the KV pair. Return ok and level needed to insert.
+// If level 0 is returned it means the insert failed 
 func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 	var k Key
 	var v Value

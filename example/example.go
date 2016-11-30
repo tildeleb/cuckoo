@@ -18,7 +18,7 @@ import (
 	_ "math/rand"
 	cr "crypto/rand"
 	"runtime/pprof"
-	"github.com/tildeleb/hrff"
+	"leb.io/hrff"
 	"github.com/tildeleb/cuckoo"
 	"github.com/tildeleb/cuckoo/primes"
 	"github.com/tildeleb/cuckoo/dstest"
@@ -209,6 +209,9 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 		if fs.Failed {
 			fails++
 		}
+		if d.Limited {
+			td.Limited = true
+		}
 		if *fo {
 			continue
 		}
@@ -323,7 +326,8 @@ func runTrials() {
 		api := float64(c.Attempts)/float64(c.Inserts)
 		ipi := float64(c.Iterations)/float64(c.Inserts)
 
-		fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, avg=%0.4f\n", *ntables, nb, *nslots, tot, max, *ntrials, fails, avg)
+		fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, limited=%v, avg=%0.4f\n",
+			*ntables, nb, *nslots, tot, max, *ntrials, fails, d.Limited, avg)
 		fmt.Printf("trials: MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f\n", d.Mr, d.Ll, c.Aborts, bpi, api, ipi)
 		//fmt.Printf("trials: MaxRemaining=%d\n", dstest.Mr)
 		//fmt.Printf("trials: LowestLevel=%d\n", dstest.Ll)

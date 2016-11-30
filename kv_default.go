@@ -4,4 +4,5 @@ package cuckoo
 
 type Key uint64
 type Value uint64
+//type Value interface{}
 

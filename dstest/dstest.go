@@ -7,7 +7,6 @@ import "fmt"
 import "math/rand"
 import c "github.com/tildeleb/cuckoo"
 
-
 // basic data structures methods and a method to get stats, what do we do about level?
 type DSTester interface {
 	Insert(key c.Key, value c.Value) (ok bool)
@@ -22,28 +21,28 @@ type DSTester interface {
 
 // return information about what happened during a fill
 type FillStats struct {
-	Load		float64
-	Base		int
-	Total 		int
-	Thresh		int
-	Used		int
-	Remaining	int
-	LowestLevel	int
-	Fails		int
-	Failed		bool
-	Limited		bool
+	Load        float64
+	Base        int
+	Total       int
+	Thresh      int
+	Used        int
+	Remaining   int
+	LowestLevel int
+	Fails       int
+	Failed      bool
+	Limited     bool
 }
 
 type DSTest struct {
 	Seed int64
-	Mr int
-	Ll int
+	Mr   int
+	Ll   int
 	FillStats
 	I DSTester
 	R *rand.Rand
 }
 
-func New(i DSTester, ll int, seed int64) *DSTest {
+func NewTester(i DSTester, ll int, seed int64) *DSTest {
 	d := DSTest{Seed: seed, Ll: ll, I: i}
 	//d.Remaining = 1<<32
 	d.R = rand.New(rand.NewSource(int64(seed))) // no lock
@@ -82,7 +81,7 @@ func (d *DSTest) _fill(tables, buckets, slots, ibase int, flf float64, verbose, 
 	fs.Load = float64(1.0)
 	cnt := 1
 	svi := amax
-	lowestLevel := 1<<31
+	lowestLevel := 1 << 31
 	onep := (amax - base) / 100
 	thresh := 0
 
@@ -96,23 +95,25 @@ func (d *DSTest) _fill(tables, buckets, slots, ibase int, flf float64, verbose, 
 	for i := base; i < amax; i++ {
 		//fmt.Printf("%d\n", i)
 		ok, l := d.I.InsertL(c.Key(i), c.Value(uint64(cnt)))
-		if  l < lowestLevel && l != 0 {
+		if l < lowestLevel && l != 0 {
 			lowestLevel = l
 		}
 		if !ok {
+			// Two reasons we fail, load constraint (fs.Limited) or other (fs.Failed)
 			if l == 0 {
 				fs.Limited = true
+			} else {
+				fs.Failed = true
 			}
 			if verbose {
 				if printLevels {
 					fmt.Printf("%d/%d\n", l, lowestLevel)
 				}
 				fmt.Printf("    fill: failed @ %d/%d, remain=%d, MaxPathLen=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n",
-					i, amax, amax - i, d.I.GetCounter("MaxPathLen"), d.I.GetCounter("bumps"), d.I.GetCounter("elements"), d.I.GetCounter("size"),
+					i, amax, amax-i, d.I.GetCounter("MaxPathLen"), d.I.GetCounter("bumps"), d.I.GetCounter("elements"), d.I.GetCounter("size"),
 					fs.Load, l, float64(d.I.GetCounter("bumps"))/float64(d.I.GetCounter("inserts")))
 			}
 			fs.Used = i - base
-			fs.Failed = true
 			fs.LowestLevel = lowestLevel
 			svi = i
 			break
@@ -123,7 +124,7 @@ func (d *DSTest) _fill(tables, buckets, slots, ibase int, flf float64, verbose, 
 			}
 		}
 		if progress && cnt >= thresh {
-			pcnt := cnt/onep
+			pcnt := cnt / onep
 			if pcnt%10 == 0 {
 				fmt.Printf("%d", pcnt/10)
 			} else {
@@ -138,11 +139,11 @@ func (d *DSTest) _fill(tables, buckets, slots, ibase int, flf float64, verbose, 
 		fmt.Printf("\n")
 	}
 	fs.LowestLevel = lowestLevel
-	fs.Load = float64(d.I.GetCounter("elements"))/float64(d.I.GetCounter("size"))
+	fs.Load = float64(d.I.GetCounter("elements")) / float64(d.I.GetCounter("size"))
 	fs.Remaining = amax - svi
 	if verbose {
 		fmt.Printf("    fill: fail=%v @ %d/%d, remain=%d, MaxPathLen=%d, bumps=%d, %d/%d=%0.4f, bpi=%0.2f\n",
-			fs.Failed, svi, amax, amax - svi,
+			fs.Failed, svi, amax, amax-svi,
 			d.I.GetCounter("MaxPathLen"), d.I.GetCounter("bumps"), d.I.GetCounter("inserts"), d.I.GetCounter("elements"),
 			fs.Load, float64(d.I.GetCounter("bumps"))/float64(d.I.GetCounter("inserts")))
 	}
@@ -156,11 +157,11 @@ func (d *DSTest) _fill(tables, buckets, slots, ibase int, flf float64, verbose, 
 		fmt.Printf("\n")
 	}
 	//fmt.Printf("\n")
-/*
-	if level == -8000 {
-		panic("_fill")
-	}
-*/
+	/*
+		if level == -8000 {
+			panic("_fill")
+		}
+	*/
 	//avg := tot / float64(trials)
 	//fmt.Printf("tables=%d, buckets=%d, slots=%d, trials=%d, avg=%0.2f\n", tables, buckets, slots, trials, avg)
 	return &fs
@@ -186,7 +187,7 @@ func (d *DSTest) Verify(base, n int, progress bool) bool {
 	onep := n / 100
 	thresh := onep
 	cnt := 0
-	for i := base; i < base + n; i++ {
+	for i := base; i < base+n; i++ {
 		cnt++
 		v, ok := d.I.Lookup(c.Key(i))
 		if !ok {
@@ -219,7 +220,7 @@ func (d *DSTest) Delete(base, n int, verbose, progress bool) bool {
 	onep := n / 100
 	thresh := onep
 	cnt := 0
-	for i := base; i < base + n; i++ {
+	for i := base; i < base+n; i++ {
 		if _, b := d.I.Delete(c.Key(i)); !b {
 			return false
 		}

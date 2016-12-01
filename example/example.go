@@ -122,6 +122,7 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 	tot := float64(0)
 	fails = 0
 	for t := 0; t < trials; t++ {
+		fmt.Printf("t=%d, fails=%d\n", t, fails)
 		// init
 		//fmt.Printf("trials: init\n")
 		start := time.Now()
@@ -167,8 +168,10 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		//c.Print() // xxx
 
 		tot += fs.Load
+		fmt.Printf("fs=%#v\n", fs)
 		if fs.Failed {
 			fails++
+			fmt.Printf("fails=%d\n", fails)
 		}
 		if *fo {
 			continue
@@ -221,7 +224,9 @@ func trials(tables, buckets, slots, trials int, lf float64, ibase int, verbose, 
 		}
 	}
 	avg = tot / float64(trials)
-	//fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, trials=%d, fails=%d, avg=%0.2f\n", tables, buckets, slots, trials, fails, avg)
+	fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, trials=%d, avg=%0.2f max=%d, fails=%d\n", tables, buckets, slots, trials,
+		avg, rmax, fails)
+	fmt.Printf("trials: cs=%#v\n", cs)
 	return // avg, max, fails
 }
 

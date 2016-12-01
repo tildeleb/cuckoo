@@ -39,6 +39,14 @@ Status
 ------
 *The code should be considered beta quality.*
 
+Performance optimizations caused me to switch the hash function used to be the Intel X86-64 accelerated [AES hash function](https://github.com/tildeleb/aeshash) from Go's runtime.  
+
+Optimizations were put into place to raise the performance level to be competitive with Go's builtin map. The optimizations made use of the inline functionality of the Go's gc compiler. Now that Go 1.7 has a new SSA backend, all the optimizations need to be verified. Internally the standard hash function interface is supported. It should be possible to support a pluggable hash function interface in the future, with some performance hit as the standard hash function interface does not support optimizations for hashing 32 and 64 bit numeric keys among other issues.
+
+Support currently exists for cross platform Jenkins2 but the code here won't compile on other platforms.
+
+**Right now the code only compiles on Intel X86-64 platforms with AESNI support.**
+
 Goals For This Version
 ----------------------
 * Allow for many configuration options to explore the design space

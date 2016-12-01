@@ -13,7 +13,7 @@ import (
 	"github.com/alecthomas/binary"
 	"hash"
 	"leb.io/aeshash" // no longer self contained package
-	_ "leb.io/cuckoo/jenkins264"
+	"leb.io/cuckoo/jenkins264"
 	_ "leb.io/cuckoo/jk3"
 	_ "leb.io/cuckoo/murmur3"
 	"leb.io/cuckoo/primes"
@@ -392,24 +392,22 @@ func (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
 		}
 		c.buf.b = c.buf.base[0:c.buf.i]
 	}
-	if c.HashName == "" {
-		panic("hash interface")
-		hf.Reset()
-		hf.Write(c.buf.b)
-		h1 := uint64(hf.Sum64())
-		h = h1 % uint64(c.Buckets)
-		//fmt.Printf("c.hs[%d]=0x%x, Sum32(b)=0x%x\n", k, h1, murmur3.Sum32(b, c.seeds[k]))
-	} else {
-		//if c.HashName == "aes" {
+	if c.hashno == aes {
 		h = aeshash.Hash(c.buf.b, seed) % uint64(c.Buckets)
-		//} else {
-		//h = jenkins264.Hash(c.buf.b, seed) % uint64(c.Buckets)
-		//}
-		/*
-				h = uint64(murmur3.Sum32(c.b, uint32(seed))) % uint64(c.Buckets)
-			case "j332":
-				h = jenkins3.Sum32(c.b, seed) % uint32(c.Buckets)
-		*/
+	} else {
+		if c.hashno == j264 {
+			h = jenkins264.Hash(c.buf.b, seed) % uint64(c.Buckets)
+		} else {
+			panic("_calcHash")
+			panic("hash interface")
+			hf.Reset()
+			hf.Write(c.buf.b)
+			h1 := uint64(hf.Sum64())
+			h = h1 % uint64(c.Buckets)
+			//fmt.Printf("c.hs[%d]=0x%x, Sum32(b)=0x%x\n", k, h1, murmur3.Sum32(b, c.seeds[k]))
+		}
+		//h = uint64(murmur3.Sum64(c.b, uint32(seed))) % uint64(c.Buckets)
+		//h = jenkins3.Sum64(c.b, seed) % uint32(c.Buckets)
 	}
 	return
 }

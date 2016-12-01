@@ -1,5 +1,3 @@
-*Under Active Development*
-
 <img src="http://clipart.coolclips.com/100/wjm/tf05110/CoolClips_hous1343.jpg"></img>
 
 Cuckoo Hash Tables
@@ -39,7 +37,7 @@ An example program is included which easily allows one to quickly try out new co
 
 Status
 ------
-*The code should currently be considered pre-alpha quality.*
+*The code should be considered beta quality.*
 
 Goals For This Version
 ----------------------
@@ -96,7 +94,7 @@ Included Sub-Packages
 * jenkins hash package
 * murmur3 hash package
 * dtest test framework
-* primes provides prime numbers for 
+* primes provides prime numbers for table sizes
 
 Benchmarks
 ----------
@@ -131,7 +129,7 @@ Selectable Hash Functions
 -------------------------
 The hash function used by this package can be selected. Currently only two hash functions are supported.
 
-1. "aes" This hash function is the same hash function used by Go's map. AESNI instructions are used to generates a very fast high quality hash function. Special versions for 32 and 64 bit data are supported. This hash function is 5x faster than "j264".
+1. "aes" This hash function is the same hash function used by Go's map. AESNI instructions are used to generates a very fast high quality hash function. Special versions for 32 and 64 bit data are supported. This hash function is about 5x faster than "j264".
 
 2. "j264" This is a version of Jenkin's 2nd generation hash functions. There is some optimization for speed but no special versions of 32 and 64 bit data. No assembler optimization. No fast path. No inlining.
 
@@ -261,7 +259,7 @@ This version of a cuckoo hash table implements a three dimensional hash table. I
 
 The insert algorithm is as follows. For the given key, a hash value is calculated for each hash table. The bucket in the leftmost table is indexed by its key and if a free slot is found it is used. If none of the slots are free a random slot is evicted and the new key/value pair is stored where there and the evicted slots becomes the new ke/value pair to be inserted in the next rightmost hash table.
 
-The evicted key and it's value are  then attempted to be stored in the next hash table to the right and the same procedure is followed until hopefully a home is found for all key/value pairs.
+The evicted key and it's value are then attempted to be stored in the next hash table to the right and the same procedure is followed until hopefully a home is found for all key/value pairs.
 
 The entire procedure is repeated until the end of the left to right hash tables is reached. again for a her specified number of iterations. When the number of iterations has expired (== 0) the algorithm goes into recovery mode, where instead of trying to insert a value it tries to get the value to be inserted back as the value to be inserted. This isn't alway possible in which case data loss happens.
 
@@ -306,7 +304,9 @@ I am interested in working with large datasets. In the end the main reason I cho
 **A**: Sure, but see above.
 
 **Q**: What hash functions are used?
-**A**: You currently have a choice of an X86-64 accelerated 64 bit hash calculated using AESNI on X86-64 platforms. or Siphash also accelerated on X86-64 but has fallback to pure Go for platforms other than X86-64. 
+**A**: Currently only the accelerated 32 bit hash calculated using AESNI on X86-64 platforms.
+
+Support for other hash functions has to be put back in. Siphash also accelerated on X86-64 but has fallback to pure Go for platforms other than X86-64. Jenkins and Murmur are also supported.
 
 **Q**: Why is Delete so slow?  
 **A**: Essentially because Delete has to look is t * s places to find the key whereas Go's build in map only has to look in a single place. In the example benchmarks t == 2 and s == 8 so s * t == 16. Therefor on average Delete has to do 8 lookups to find the key. The speed of Delete can be increased by decreasing the number of slots and tables.
@@ -317,5 +317,6 @@ I am interested in working with large datasets. In the end the main reason I cho
 
 References
 ----------
-[^1]: [21] R. Pagh and F. Rodler. Cuckoo hashing. Journal of Algorithms,51(2):122–144, May 2004.
+[^1]: [21] R. Pagh and F. Rodler. Cuckoo hashing. Journal of Algorithms,
+51(2):122–144, May 2004.
 

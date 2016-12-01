@@ -54,6 +54,7 @@ var pl = flag.Bool("pl", false, "print level of each insert")
 var pt = flag.Bool("pt", false, "print summary for each trail")
 var ps = flag.Bool("ps", false, "print stats at the end of all trails")
 var pr = flag.Bool("pr", false, "print progress")
+var pf = flag.Bool("pf", false, "print info on failure")
 var verbose = flag.Bool("v", false, "verbose")
 
 var cp = flag.String("cp", "", "write cpu profile to file")
@@ -158,9 +159,9 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 	//r := rand.New(rand.NewSource(int64(bseed)))
 	//rand.Seed(seed)
 
-	td := dstest.New(nil, *startLevel, 0)
+	td := dstest.NewTester(nil, *startLevel, 0) // ???
 	for t := 0; t < trials; t++ {
-		fmt.Printf("t=%d, fails=%d\n", t, fails)
+		//fmt.Printf("t=%d, fails=%d\n", t, fails)
 		// init
 		//fmt.Printf("trials: init\n")
 		start := time.Now()
@@ -168,7 +169,7 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 		if c == nil {
 			panic("New failed")
 		}
-		d := dstest.New(c, *startLevel, bseed)
+		d = dstest.NewTester(c, *startLevel, bseed) // ???
 		//d.I = c
 
 		siz := int(unsafe.Sizeof(key))
@@ -183,7 +184,7 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 		stop := time.Now()
 		if t == 0 {
 			sz := hrff.Int64{int64(c.Size * c.BucketSize), "bytes"}
-			fmt.Printf("trials: bseed=%#x, seede=%#x, cucko hash table size=%H\n", bseed, *seede, sz)
+			fmt.Printf("trials: bseed=%#x, seede=%#x, cucko hash table size=%H\n", uint64(bseed), *seede, sz)
 		}
 		durations[0] = tdiff(start, stop)
 		print(0, tables*buckets*slots)
@@ -209,10 +210,10 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 		//c.Print() // xxx
 
 		tot += fs.Load
-		fmt.Printf("fs=%#v\n", fs)
+		//fmt.Printf("fs=%#v\n", fs)
 		if fs.Failed {
 			fails++
-			fmt.Printf("fails=%d\n", fails)
+			//fmt.Printf("fails=%d\n", fails)
 		}
 		if d.Limited {
 			td.Limited = true
@@ -268,10 +269,12 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 			fmt.Printf("trials: cs=%#v\n", c.Counters)
 			fmt.Printf("trials: fs=%#v\n", fs)
 		}
-		if *pt {
+		if *pt || (*pf && fs.Failed) {
 			fmt.Printf("trials: trial=%d, fails=%d, L=%v, F=%v, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxAttemps=%d, MaxIterations=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",
 				t, fails, fs.Limited, fs.Failed, fs.Remaining, c.Aborts, fs.LowestLevel, c.MaxAttempts, c.MaxIterations, bpi, api, ipi, float64(c.Elements)/float64(c.Size), c.Elements, c.Size)
+			fmt.Printf("trials: fs=%#v\n", fs)
 		}
+
 		bseed++
 		if verbose {
 			fmt.Printf("\n")
@@ -334,6 +337,11 @@ func runTrials() {
 	}
 	tot := *ntables * nb * *nslots
 	d, c, avg, max, fails := trials(*ntables, nb, *nslots, *ntrials, 0, *lf, *ibase, *verbose, *ranr, *ranb)
+
+	//fmt.Printf("dbg: avg=%0.4f, max=%d, fails=%d\n", avg, max, fails)
+	//fmt.Printf("dbg: d=%#v\n", d)
+	//fmt.Printf("dbg: c=%#v\n", c)
+
 	bpi := float64(c.Bumps) / float64(c.Inserts)
 	api := float64(c.Attempts) / float64(c.Inserts)
 	ipi := float64(c.Iterations) / float64(c.Inserts)

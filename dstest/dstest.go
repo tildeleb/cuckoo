@@ -5,7 +5,6 @@ package dstest
 
 import "fmt"
 import "math/rand"
-<<<<<<< HEAD
 import c "leb.io/cuckoo"
 
 //var Mr int
@@ -38,12 +37,12 @@ type FillStats struct {
 }
 
 type DSTest struct {
-	Seed int64
-	Mr   int
-	Ll   int
-	FillStats
-	I DSTester
-	R *rand.Rand
+	Seed      int64      // seed used to control fill stream
+	Mr        int        // Max remaining
+	Ll        int        // Lowest level
+	FillStats            // stats
+	I         DSTester   // functions
+	R         *rand.Rand // random number generator with no lock
 }
 
 func NewTester(i DSTester, ll int, seed int64) *DSTest {

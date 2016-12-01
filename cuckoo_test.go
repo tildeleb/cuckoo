@@ -15,7 +15,7 @@ import "testing"
 
 var r = rand.Float64
 var b = int(0)
-var n = int(1e6)
+var n = int(2e6)
 
 const hashName = "aes" // aes" "j264"
 
@@ -72,7 +72,6 @@ func CreateKeysValuesMap(b, n int) *KeySet {
 
 	runtime.ReadMemStats(&msb)
 	ks.M = make(map[Key]Value)
-	//fmt.Printf("CreateKeysValuesMap: n=%d\n", n)
 	for i := b; i < b+n; i++ {
 		k := Key(rand.Uint32())
 		ks.M[k] = v
@@ -107,7 +106,7 @@ func TestBasic(t *testing.T) {
 	c := New(tables, -int(float64(n)*ef+add)/(tables*slots), slots, lf, hashName)
 	//t.Logf("Config=%#v\n", c.Config)
 	if c == nil {
-		t.Logf("New failed probably because slots don't match")
+		t.Logf("NewTester failed probably because slots don't match")
 		t.FailNow()
 	}
 	c.SetNumericKeySize(8)
@@ -130,9 +129,9 @@ func TestMemoryEfficiency(t *testing.T) {
 	var msb, msa runtime.MemStats
 
 	runtime.ReadMemStats(&msb)
-	c := New(tables, -int(float64(n)*ef+add)/(tables*slots), slots, lf, hashName)
+	c := NewTester(tables, -int(float64(n)*ef+add)/(tables*slots), slots, lf, hashName)
 	if c == nil {
-		t.Logf("New failed probably because slots don't match")
+		t.Logf("NewTester failed probably because slots don't match")
 		t.FailNow()
 	}
 	c.SetNumericKeySize(8)
@@ -159,7 +158,7 @@ func TestMemoryEfficiency(t *testing.T) {
 
 func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
 	//t.Logf("BenchmarkCuckooInsert: N=%d, ef=%f, add=%f, lf=%f, tables=%d, slots=%d\n", b.N, ef, add, lf, tables, slots)
-	c := New(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
+	c := NewTester(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
 	//fmt.Printf("Config=%#v\n", c.Config)
 	c.SetNumericKeySize(8)
 	//fmt.Printf("N=%d\n", b.N)
@@ -180,7 +179,7 @@ func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, 
 }
 
 func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	c := New(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
+	c := NewTester(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
 	c.SetNumericKeySize(8)
 	for i := 0; i < b.N; i++ {
 		c.Insert(ks.Keys[i%n], ks.Vals[i%n])
@@ -194,7 +193,7 @@ func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, 
 }
 
 func benchmarkCuckooDelete(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	c := New(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
+	c := NewTester(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
 	c.SetNumericKeySize(8)
 	for i := 0; i < b.N; i++ {
 		c.Insert(ks.Keys[i%n], ks.Vals[i%n])

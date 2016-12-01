@@ -91,6 +91,8 @@ type Cuckoo struct {
 	tbs           [][]Buckets     // indexed defineBuckets defined in kv_array.go or kv_slice.go
 	r             uint64          // reciprocal of Buckets
 	n             uint64          // Size
+	rot           int             // table rotator
+	fp            bool            // first pass of table insert
 	Config                        // config data
 	Counters                      // stats
 	TableCounters []TableCounters // per table stats
@@ -99,16 +101,17 @@ type Cuckoo struct {
 	hf            []hash.Hash64   // one for each table + the last one reserved for fingerprints
 	hs            []uint64        // hash sums for each table and fingerprint
 	//b				[]byte			// used for result of marshalled data
-	buf            *buf            // for marshalling data
-	encoder        *binary.Encoder // encoder for serializing Key
-	rnd            func() float64  // random numbers for eviction
-	eseed          int64
-	emptyKey       Key   // empty key
-	emptyValue     Value // if empty key store value lives here and not in a hash table
-	emptyKeyValid  bool  // something store here
-	ekiz           bool  // empty key is zero
-	grow           bool  // are we allowed to add a hash table as needed?
-	NumericKeySize int   // if key is numeric what is size in bytes
+	buf     *buf            // for marshalling data
+	encoder *binary.Encoder // encoder for serializing Key
+	//rnd				func() float64	// random numbers for eviction
+	rnd            *rand.Rand // random numbers used for eviction
+	eseed          int64      // seed for evictions
+	emptyKey       Key        // empty key
+	emptyValue     Value      // if empty key store value lives here and not in a hash table
+	emptyKeyValid  bool       // something store here
+	ekiz           bool       // empty key is zero
+	grow           bool       // are we allowed to add a hash table as needed?
+	NumericKeySize int        // if key is numeric what is size in bytes
 }
 
 // Simple struct and a couple of methods that satisfy the io.Writer interface.
@@ -178,7 +181,8 @@ func (c *Cuckoo) GetTableCounter(t int, s string) int {
 
 // This function used to select a victim bucket to be evicted.
 func (c *Cuckoo) rbetween(a int, b int) int {
-	rf := c.rnd()
+	//rf := c.rnd()
+	rf := c.rnd.Float64()
 	diff := float64(b - a + 1)
 	r2 := rf * diff
 	r3 := r2 + float64(a)
@@ -229,11 +233,12 @@ func (c *Cuckoo) addTable(growFactor int) {
 // Use hashName as the hash function.
 // If specified, use emptyKey as the key that signifies that an element is unused.
 // However, usually the default, the Go zero initization, is what you want.
-func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
+func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
 	var bs Buckets
 	var b Bucket
 	//var akey Key
 
+	//fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
 	if len(bs) > 0 && len(bs) != slots {
 		fmt.Printf("New: slot mismatch compiled slots=%d, requested slots=%d\n", len(bs), slots)
 		return nil
@@ -245,6 +250,11 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 		//fmt.Printf("buckets=%d, pbuckets=%d\n", buckets, pbuckets)
 		buckets = pbuckets
 	}
+	if tables <= 0 || buckets <= 0 || slots < 1 || loadFactor < 0.0 || loadFactor > 1.0 {
+		fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
+		return nil
+	}
+
 	//fmt.Printf("unsafe.Sizeof(akey)=%d\n", unsafe.Sizeof(akey))
 	/*
 		c.b = make([]byte, unsafe.Sizeof(akey), unsafe.Sizeof(akey))
@@ -267,7 +277,13 @@ func New(tables, buckets, slots int, loadFactor float64, hashName string, emptyK
 		c.emptyKey = emptyKey[0]
 	}
 	c.ekiz = c.emptyKey == zeroKey
-	c.rnd = rand.Float64
+	//c.rnd = rand.Float64
+
+	c.eseed = int64(eseed)
+	src := rand.NewSource(int64(c.eseed))
+	r := rand.New(src)
+	c.rnd = r
+
 	c.BucketSize = int(unsafe.Sizeof(b))
 	c.BucketsSize = int(unsafe.Sizeof(bs))
 	c.TableCounters = make([]TableCounters, tables)
@@ -469,7 +485,7 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 		//ha := c.calcHashForTable(t, key)
 		//ba := ha % uint32(c.Buckets)
 
-		// this was a test to see if pre-calculating the reciprocal would be faster than MOD
+		// this was an experiment to see if pre-calculating the reciprocal would be faster than MOD
 		// it is by 10% for L1 fit and 3% for L2 fit, however switching to assembly might make it better than that.
 		// L1 fit 11.345 total vs 12.113 total
 		// L2 fit 1:00.74 total vs 1:02.49 total
@@ -548,6 +564,7 @@ func (c *Cuckoo) Delete(key Key) (Value, bool) {
 
 // Internal version of insert routine.
 // Given key, value, and a starting level insert the KV pair. Return ok and level needed to insert.
+// If level 0 is returned it means the insert failed
 func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 	var k Key
 	var v Value
@@ -571,6 +588,9 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		k = kx // was :=
 		v = vx // was :=
 		for t, _ := range c.tbs {
+			// rotate which table we start inserts with
+			t += c.rot
+			t %= c.Tables
 			//phv()
 			//b := c.hs[t]
 
@@ -631,14 +651,15 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 
 		// skip 0 because it's used as a signal that Insert failed because of load factor constraint
 		if level == 0 {
+			c.Aborts++
 			level = -1
 		}
 		if level <= c.LowestLevel {
+			c.Fails++
 			fmt.Printf("cukcoo: Insert FAILED, val=%v, key=%v\n", k, v)
 			return false
 		}
 		if level <= 0 {
-			c.Aborts++
 			// fine point, on failure to insert the key not inserted may not be the original key
 			// so keep interating until the original key is not found to prevent random data loss
 			_, found := c.Lookup(key)
@@ -696,6 +717,8 @@ again:
 	if bumps > c.MaxPathLen {
 		c.MaxPathLen = bumps
 	}
+	c.rot++
+	c.rot %= c.Tables
 	//fmt.Printf("%d/%d ", c.Attempts - sva, c.Iterations - svi)
 	return
 }

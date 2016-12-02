@@ -43,9 +43,44 @@ Performance optimizations caused me to switch the hash function used to be the I
 
 Optimizations were put into place to raise the performance level to be competitive with Go's builtin map. The optimizations made use of the inline functionality of the Go's gc compiler. Now that Go 1.7 has a new SSA backend, all the optimizations need to be verified. Internally the standard hash function interface is supported. It should be possible to support a pluggable hash function interface in the future, with some performance hit as the standard hash function interface does not support optimizations for hashing 32 and 64 bit numeric keys among other issues.
 
-Support currently exists for cross platform Jenkins2 but the code here won't compile on other platforms.
+Support currently exists for cross platform Jenkins264 and Jeknins364.
 
-**Right now the code only compiles on Intel X86-64 platforms with AESNI support.**
+The package is untested on any architecture other than Intel X86-64
+
+How to Build
+------------
+
+**NB: Before you build you need to define the types of your key and value. Edit the file "kv_default.go" and define the types for "Key" and "Value".**
+
+###Simple (builds a portable version with runtime selection of slots)
+
+	% go build -tags="noaes slice"
+
+Note the above build uses a slice per bucket to implement slots. This allows for experimentation with the number of slots without recompiling but is inefficient from a memory usage perspective. When the number of slots needed for your application is finalized do the following:
+
+###Optimized
+Edit "kvt_array.go" and define Slots to be the number of slots needed for your application.  
+
+	% go build -tags=noaes
+
+This will build a version that uses arrays. Calls to cuckoo.New where the number of slots passed in does not match the number specified in "kvt_array.go" will fail.
+
+###X86-64 optimized
+
+	% go build
+
+This version uses an accelerated hash function that works on most Intel X86-64 architecture machines. The specific feature is AESNI and the instruction used is AESENC. This is default since that's a very popular architecture these days for desktops, laptops, an cloud machines.
+
+Included Sub-Packages
+---------------------
+* jenkins 264 hash package
+* jenkins 364 hash package
+* dtest test framework
+* primes provides prime numbers for table sizes
+
+Dependent Packages
+-------------------
+* [aeshash](https://github.com/tildeleb/aeshash)
 
 Goals For This Version
 ----------------------
@@ -84,25 +119,6 @@ If the single failure makes you unhappy I suggest you change the number of slots
 	./example -t 4 -b 11 -s 8 -nt=1000000 -flf=1.0 -lf=10 -dg -rb=true  524.49s user 3.76s system 101% cpu 8:42.49 total
 	leb@hula:~/gotest/src/leb/cuckoo/example % 
 
-How to Build
-------------
-
-1. Edit the file "kv_default.go" and define the types for "Key" and "Value"
-2. % go build  
-
-Note the default build uses a slice per bucket to implement slots. This allows for experimentation with the number of slots without recompiling but is inefficient from a memory usage perspective. When the number of slots needed for your application is finalized do the following:
-
-1. Edit "kvt_array.go" and define Slots to be the number of slots needed for your application.
-2. % go build -tags="array"
-
-This will build a version that uses arrays. Calls to cuckoo.New where the number of slots passed in does not match the number specified in "kvt_array.go" will fail.
-
-Included Sub-Packages
----------------------
-* jenkins hash package
-* murmur3 hash package
-* dtest test framework
-* primes provides prime numbers for table sizes
 
 Benchmarks
 ----------

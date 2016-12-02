@@ -1,41 +1,53 @@
-// +build !hash-all
-
-// Copyright © 2014 Lawrence E. Bakst. All rights reserved.
+// Copyright © 2014, 2015, 2016 Lawrence E. Bakst. All rights reserved.
+// +build !noaes
 
 package cuckoo
 
 import (
-	_ "fmt"
+	"errors"
 	"hash"
-	_ "leb.io/aeshash"
-	_ "leb.io/cuckoo/jenkins264"
+	"leb.io/aeshash"
+	"leb.io/cuckoo/jenkins264"
+	"leb.io/cuckoo/jk3"
 )
 
-const (
-	aes  = 1
-	j264 = 2
-)
-
-func setHash(hashName string) int {
+// Set hash function used
+func (c *Cuckoo) setHash(hashName string) (int, error) {
 	switch hashName {
-	case "aes":
-		return aes
 	case "":
 		fallthrough
-	default:
-		fallthrough
+	case "aes":
+		c.hf64 = aeshash.Hash64
+		c.hf32 = aeshash.Hash32
+		c.hfb = aeshash.Hash
+		c.hf = aeshash.NewAES(0)
+		return aes, nil
+	case "j364":
+		c.hf64 = nil
+		c.hf32 = nil
+		c.hfb = jenkins3.HashBytes
+		c.hf = jenkins3.New(uint32(0))
+		return j364, nil
 	case "j264":
-		return j264
-	}
-}
-
-// Select a hash function.
-func getHash(hashName string, seed uint64) hash.Hash64 {
-	switch hashName {
+		c.hf64 = nil
+		c.hf32 = nil
+		c.hfb = jenkins264.Hash
+		return j264, nil
 	default:
-		return nil
+		// fallthrough generated bad error messaage Go bug
 	}
+	return 0, errors.New("cuckoo: invalid hash name")
 }
 
-// 		s := fmt.Sprintf("cuckoo: unknown hash function %q\n", hashName)
-//		panic(s)
+// Get a hash function with a specific seed
+func (c *Cuckoo) getHash(hashName string, seed uint64) hash.Hash64 {
+	switch hashName {
+	case "":
+		fallthrough
+	case "aes":
+		return aeshash.NewAES(seed)
+	case "j364":
+		return jenkins3.New(uint32(seed))
+	}
+	panic("getHash")
+}

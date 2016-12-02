@@ -236,7 +236,7 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 		start = time.Now()
 		ok := d.Delete(fs.Base, c.Elements, verbose, *pr)
 		if !ok || c.Elements != 0 {
-			s := fmt.Sprintf("Delete failed ok=%v, c.Elements=%d", ok, c.Elements)
+			s := fmt.Sprintf("Delete failed ok=%v, c.Elements=%d\n", ok, c.Elements)
 			fmt.Printf(s)
 			//panic(s)
 		}

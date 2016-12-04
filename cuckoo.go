@@ -50,10 +50,11 @@ type Counters struct {
 	Iterations    int  // number of iterations through all the hash tables to attemps an insert
 	Deletes       int  // number of times delete has been called
 	Lookups       int  // number of lookups
+	Aborts        int  // number of times an insert had to aborted
 	Fails         int  // number of times that insert failed
 	Bumps         int  // number of evicted buckets
+	TableGrows    int  // number of hash tables added
 	MaxPathLen    int  // longest chain of bumps
-	Aborts        int  // number of times an insert had to aborted
 	MaxAttempts   int  // highest number of attempts
 	MaxIterations int  // highest number of interations
 	MinLevel      int  // lowest level achieved
@@ -413,6 +414,23 @@ func (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
 
 // inlined functions
 
+// the following 5 functions/methods can be inlined.
+func ui32tob(b []byte, key Key) {
+	b[0], b[1], b[2], b[3] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24)
+}
+
+func ui64tob(b []byte, key Key) {
+	b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24), byte(key>>32), byte(key>>40), byte(key>>48), byte(key>>56)
+}
+
+func ui64tob1(b []byte, key Key) {
+	b[0], b[1], b[2], b[3] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24)
+}
+
+func ui64tob2(b []byte, key Key) {
+	b[4], b[5], b[6], b[7] = byte(key>>32), byte(key>>40), byte(key>>48), byte(key>>56)
+}
+
 // Given a key and a hash function to use, calculate the hash for the specified table.
 // To do this we have to serialize the key
 // To get this to inline the optimization for NumericKeySize == 4 was moved to _calcHash ???
@@ -552,6 +570,8 @@ func (c *Cuckoo) Delete(key Key) (Value, bool) {
 	return zeroVal, false
 }
 
+var calls int
+
 // Internal version of insert routine.
 // Given key, value, and a starting level insert the KV pair. Return ok and level needed to insert.
 // If level 0 is returned it means the insert failed
@@ -559,6 +579,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 	var k Key
 	var v Value
 	var bumps int
+	var depth int
 
 	var ins func(kx Key, vx Value) bool // forwqrd declare the closure so we can call it recursively
 	var _ = func() {
@@ -575,12 +596,15 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		//c.calcHashes(kx)
 		//fmt.Printf("Insert: level=%d, key=%d, ", level, kx)
 		//phv()
+		depth++
 		k = kx // was :=
 		v = vx // was :=
-		for t, _ := range c.tbs {
+		// we used to move left to right, with the chance of an insert increasing as
+		// we move because the tables filled up left to right.
+		// Now we rotate the starting point. Why has no one done this before.
+		t := c.rot
+		for _, _ = range c.tbs {
 			// rotate which table we start inserts with
-			t += c.rot
-			t %= c.Tables
 			//ha := c.calcHashForTable(t, k)
 			//ba := ha % uint32(c.Buckets)
 			/*
@@ -601,6 +625,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			b := h % uint64(c.Buckets)
 
 			//fmt.Printf("Insert: next table, h=%#x, level=%d, table=%d, bucket=%d, key=%d, value=%d\n", h, level, t, b, k, v)
+			// check all the slots in the current table and see if we can insert
 			for s, _ := range c.tbs[t][b] {
 				c.Attempts++
 				pk := c.tbs[t][b][s].key
@@ -614,7 +639,8 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 					return true
 				}
 			}
-			// no slots available in this table available, pick a random key to move to the next table
+			// No slots available in this table available, evict a random KV pair and store the current KV where it was.
+			// move to the next table and different bucket and hope it works out better.
 			bumps++
 			c.Bumps++
 			c.TableCounters[t].Bumps++
@@ -627,17 +653,33 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			v = bucket.val
 			//c.calcHashes(k) ??? XXX ???
 			//fmt.Printf("insert: level=%d, new key=%d, val=%d\n", level, k, v)
+			t++
+			if t > len(c.tbs)-1 {
+				t = 0
+			}
 		}
-		// could not find any space for key in any table moving left to right
-		// try again starting with leftmost table
+		// Could not find any space for key in any table, since the key has changed by now
+		// we try again with what will probably be different buckets hoping for a place.
 		c.Iterations++
 		level--
 
-		// skip 0 because it's used as a signal that Insert failed because of load factor constraint
+		// If we reach level 0 we have failed to insert after InitialStartLevel interations, each examining
+		// t hash tables with s slots each. We don't stop because they current key
+		// is probaly not be the key we started with, so we keep going, hoping to finally get the original
+		// key back, to avoid data loss.
+		// It can also happen that in the process of doing this the key ends up being inserted because
+		// the loop and logic is identical except we stop trying if the key is inserted OR we get the original
+		// key back.
+		// We skip 0 because it's used as a return value that Insert failed because of load factor constraint.
+		// We call this an abort. An abort does not imply the KV failed to insert.
 		if level == 0 {
-			c.Aborts++
+			//fmt.Printf("insert: begin abort key=%d, val=%d, calls=%d, depth=%d, c.Iterations=%d\n", key, val, calls, depth, c.Iterations)
+			c.Aborts++ // stop trying to insert and recover displaced data
 			level = -1
 		}
+		// At this point we have failed to recover the original KV after abs(InitialLowestLevel) more interations.
+		// This means that the insert failed AND a random KV was also deleted from the Cuckoo table.
+		// Give up, we call this a "fail"
 		if level <= c.LowestLevel {
 			c.Fails++
 			fmt.Printf("cukcoo: Insert FAILED, val=%v, key=%v\n", k, v)
@@ -649,8 +691,13 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			// So level less than 0 means had to work to get a displaced key back into the hash table
 			_, found := c.Lookup(key)
 			//fmt.Printf("key %d found=%v\n", key, found)
+			// if we can't find the key that was passed in then it is safe to stop because there will
+			// be no data loss. If we can find they key that was passed in, then some other key
+			// has been displaced.
+			// This is an interesting case that I had never seen before. Insert fails and a random
+			// piece of data that was previusly inserted has been lost. Luckily the fix is pretty easy.
 			if !found {
-				//fmt.Printf("insert: aborted at level=%d, aborts=%d\n", level, c.Aborts)
+				fmt.Printf("insert: aborted at key=%d, value=%d, calls=%d, depth=%d, level=%d, aborts=%d\n", key, val, calls, depth, level, c.Aborts)
 				return false
 			}
 		}
@@ -659,6 +706,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 
 	// insert starts here
 	//fmt.Printf("Insert: level=%d, key=%d, value=%d\n", level, key, val)
+	calls++
 	k = key
 	v = val
 	sva, svi := c.Attempts, c.Iterations
@@ -686,6 +734,7 @@ again:
 	} else {
 		if c.grow {
 			fmt.Printf("insert: add a table, level=%d, key=%v, val=%v\n", level, k, v)
+			c.TableGrows++
 			c.addTable(0)
 			goto again
 		}

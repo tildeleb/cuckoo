@@ -46,6 +46,8 @@ func (c *Cuckoo) getHash(hashName string, seed uint64) hash.Hash64 {
 		fallthrough
 	case "aes":
 		return aeshash.NewAES(seed)
+	case "j264":
+		return jenkins264.New(seed)
 	case "j364":
 		return jenkins3.New(uint32(seed))
 	}

@@ -5,7 +5,7 @@ package jenkins264
 
 import (
 	_ "fmt"
-	_ "hash"
+	"hash"
 	"unsafe"
 )
 
@@ -234,4 +234,60 @@ func Hash(k []byte, seed uint64) uint64 {
 	}
 	a, b, c = mix64alt(a, b, c)
 	return c
+}
+
+type Digest struct {
+	hash uint64
+	seed uint64
+	clen int
+	tail []byte
+}
+
+// The size of an jenkins3 32 bit hash in bytes.
+const Size = 4
+
+var (
+	_ hash.Hash64 = new(Digest)
+)
+
+// New returns a new hash.Hash64 interface that computes the a 32 bit murmur3 hash.
+func New(seed uint64) hash.Hash64 {
+	d := new(Digest)
+	d.seed = seed
+	d.Reset()
+	return d
+}
+
+// Reset the hash state.
+func (d *Digest) Reset() {
+	d.hash = uint64(d.seed)
+	d.clen = 0
+	d.tail = nil
+}
+
+// Return the size of the resulting hash.
+func (d *Digest) Size() int { return Size }
+
+// Return the blocksize of the hash which in this case is 1 byte.
+func (d *Digest) BlockSize() int { return 1 }
+
+// Accept a byte stream p used for calculating the hash. For now this call is lazy and the actual hash calculations take place in Sum() and Sum32().
+func (d *Digest) Write(p []byte) (nn int, err error) {
+	l := len(p)
+	d.clen += l
+	d.tail = append(d.tail, p...)
+	return l, nil
+}
+
+// Return the current hash as a byte slice.
+func (d *Digest) Sum(b []byte) []byte {
+	h := Hash(d.tail, d.seed)
+	d.hash = h
+	return append(b, byte(h>>56), byte(h>>48), byte(h>>42), byte(h>>32), byte(h>>24), byte(h>>16), byte(h>>8), byte(h))
+}
+
+// Return the current hash as a 32 bit unsigned type.
+func (d *Digest) Sum64() uint64 {
+	d.hash = Hash(d.tail, d.seed)
+	return d.hash
 }

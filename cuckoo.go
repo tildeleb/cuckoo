@@ -237,9 +237,11 @@ func (c *Cuckoo) addTable(growFactor int) {
 
 // Create a new cuckoo hash of size  = tables * buckets * slots.
 // Don't allow more than size * loadFactor elements to be stored.
+// A loadFactor of 1.0 means the hash table can be completely full.
 // Use hashName as the hash function.
 // If specified, use emptyKey as the key that signifies that an element is unused.
-// However, usually the default, the Go zero initization, is what you want.
+// However, often the default, the Go zero initization suffices.
+// You can pass an eseed to seed the random number generator used to select a bucket for eviction.
 func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
 	var bs Buckets
 	var b Bucket
@@ -658,7 +660,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 				t = 0
 			}
 		}
-		// Could not find any space for key in any table, since the key has changed by now
+		// Could not find any space for key in any table. Since the key has now changed,
 		// we try again with what will probably be different buckets hoping for a place.
 		c.Iterations++
 		level--
@@ -701,6 +703,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 				return false
 			}
 		}
+		// ??? consider bumping c.rot here as opposed to below
 		return ins(k, v) // try to insert again, tail recursively
 	}
 

@@ -1,8 +1,8 @@
 // Copyright © 2014 Lawrence E. Bakst. All rights reserved.
 package cuckoo_test
 
-import . "github.com/tildeleb/cuckoo"
-import . "github.com/tildeleb/cuckoo/dstest"
+import . "leb.io/cuckoo"
+import . "leb.io/cuckoo/dstest"
 import "leb.io/hrff"
 
 //import "flag"
@@ -35,6 +35,18 @@ func hu(v uint64, u string) hrff.Int64 {
 func hi(v int64, u string) hrff.Int64 {
 	return hrff.Int64{V: int64(v), U: u}
 }
+
+type config struct {
+	ef     float64
+	add    float64
+	lf     float64
+	flf    float64
+	tables int
+	slots  int
+	n      int
+}
+
+var cf = config{ef: 1.01, add: 32.0, lf: 1.0, flf: 0.9, tables: 4, slots: 8, n: 1000000}
 
 func dump_mstats(m *runtime.MemStats, mstats, cstats, gc bool) {
 	if mstats {
@@ -94,24 +106,32 @@ const flf = 1.0
 const tables = 2
 const slots = 8
 
-func TestBasic(t *testing.T) {
-	const ef = 1.01
-	const add = 32.0
-	const lf = 1.0
-	const flf = 0.9
-	const tables = 4
-	const slots = 8
-	const n = 1000000
+type IB interface {
+	Logf(string, ...interface{})
+	FailNow()
+}
 
-	c := New(tables, -int(float64(n)*ef+add)/(tables*slots), slots, lf, hashName)
-	//t.Logf("Config=%#v\n", c.Config)
+func setup(t IB, cf config) (d *DSTest) { // testing.T
+	//New(tables, -int(float64(n)*ef+add)/(tables*slots), slots, 0, lf, hashName)
+	//start := time.Now()
+	c := New(cf.tables, -int(float64(cf.n)*cf.ef+cf.add)/(cf.tables*cf.slots), cf.slots, 0, cf.lf, hashName)
 	if c == nil {
-		t.Logf("NewTester failed probably because slots don't match")
+		t.Logf("TestBasic: failed probably because slots don't match")
 		t.FailNow()
 	}
+	d = NewTester(c, 2000, 0) // ???
+	d.I = c
+	//t.Logf("Config=%#v\n", c.Config)
+
 	c.SetNumericKeySize(8)
-	_ = Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false, false)
-	ok := Verify(c, 1, n/(tables*slots), false)
+	return
+}
+
+func TestBasic(t *testing.T) {
+	var cf = config{ef: 1.01, add: 32.0, lf: 1.0, flf: 0.9, tables: 4, slots: 8, n: 1000000}
+	d := setup(t, cf)
+	_ = d.Fill(cf.tables, cf.n/(cf.tables*cf.slots), cf.slots, 1, cf.flf, false, false, false, false)
+	ok := d.Verify(1, n/(tables*slots), false)
 	if !ok {
 		t.FailNow()
 	}
@@ -119,26 +139,16 @@ func TestBasic(t *testing.T) {
 }
 
 func TestMemoryEfficiency(t *testing.T) {
-	const ef = 1.01
-	const add = 32.0
-	const lf = 1.0
-	const flf = 1.0
-	const tables = 2
-	const slots = 8
-	const n = 1000000
+	var cf = config{ef: 1.01, add: 32.0, lf: 1.0, flf: 1.0, tables: 2, slots: 8, n: 1000000}
 	var msb, msa runtime.MemStats
 
 	runtime.ReadMemStats(&msb)
-	c := NewTester(tables, -int(float64(n)*ef+add)/(tables*slots), slots, lf, hashName)
-	if c == nil {
-		t.Logf("NewTester failed probably because slots don't match")
-		t.FailNow()
-	}
-	c.SetNumericKeySize(8)
+	d := setup(t, cf)
+	//d := setup(t, cf)
 	//for k, v := range ks.M {
 	//	c.Insert(k, v)
 	//}
-	fs := Fill(c, tables, n/(tables*slots), slots, 1, flf, false, false, false, true)
+	fs := d.Fill(cf.tables, cf.n/(cf.tables*cf.slots), cf.slots, 1.0, cf.flf, false, false, false, true)
 	runtime.ReadMemStats(&msa)
 
 	//dump_mstats(&msb, true, false, false)
@@ -147,6 +157,7 @@ func TestMemoryEfficiency(t *testing.T) {
 	//fmt.Printf("msb=%#v\n", msb)
 	//fmt.Printf("msa=%#v\n", msa)
 
+	c := (d.I).(*Cuckoo)
 	t.Logf("Cuckoo Hash LoadFactor:       %0.2f", c.GetLoadFactor())
 	t.Logf("Cuckoo Hash memory allocated: %0.0f MiB", float64(msa.Alloc-msb.Alloc)/float64(1<<20))
 	t.Logf("Go map memory allocated:      %0.0f MiB", float64(ks.AllocBytes)/float64(1<<20))
@@ -158,18 +169,19 @@ func TestMemoryEfficiency(t *testing.T) {
 
 func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
 	//t.Logf("BenchmarkCuckooInsert: N=%d, ef=%f, add=%f, lf=%f, tables=%d, slots=%d\n", b.N, ef, add, lf, tables, slots)
-	c := NewTester(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
+	d := setup(b, cf)
 	//fmt.Printf("Config=%#v\n", c.Config)
-	c.SetNumericKeySize(8)
 	//fmt.Printf("N=%d\n", b.N)
 	b.ResetTimer()
 
 	if true {
 		for i := 0; i < b.N; i++ {
-			c.Insert(ks.Keys[i%n], ks.Vals[i%n])
+			d.I.Insert(ks.Keys[i%n], ks.Vals[i%n])
 		}
 	} else {
-		fs := Fill(c, tables, b.N, slots, 1, flf, false, false, false, true)
+		// func (d *DSTest) Fill(tables, buckets, slots, ibase int, flf float64, verbose, pl, progress bool, r bool) *FillStats {
+
+		fs := d.Fill(tables, b.N, slots, 1, flf, false, false, false, true)
 		fs.Fails = fs.Fails
 		//b.Logf("stats=%#v\n", fs)
 	}
@@ -179,30 +191,28 @@ func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, 
 }
 
 func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	c := NewTester(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
-	c.SetNumericKeySize(8)
+	d := setup(b, cf)
 	for i := 0; i < b.N; i++ {
-		c.Insert(ks.Keys[i%n], ks.Vals[i%n])
+		d.I.Insert(ks.Keys[i%n], ks.Vals[i%n])
 	}
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		c.Lookup(ks.Keys[i%n])
+		d.I.Lookup(ks.Keys[i%n])
 	}
 }
 
 func benchmarkCuckooDelete(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
-	c := NewTester(tables, -int(float64(b.N)*ef+add)/(tables*slots), slots, lf, hash)
-	c.SetNumericKeySize(8)
+	d := setup(b, cf)
 	for i := 0; i < b.N; i++ {
-		c.Insert(ks.Keys[i%n], ks.Vals[i%n])
+		d.I.Insert(ks.Keys[i%n], ks.Vals[i%n])
 	}
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		c.Delete(ks.Keys[i%n])
+		d.I.Delete(ks.Keys[i%n])
 	}
 }
 
@@ -287,7 +297,7 @@ func Example() {
 		return
 	}
 
-	c := New(tables, buckets, slots, lf, hashName)
+	c := New(tables, buckets, slots, 0, lf, hashName)
 	if c == nil {
 		fmt.Printf("Example: New failed probably because slots don't match")
 	}
@@ -349,3 +359,5 @@ func Example() {
 	// Output:
 	// Example: Passed
 }
+
+var _ DSTester = New(4, 11, 8, 0, 1.0, "aes")

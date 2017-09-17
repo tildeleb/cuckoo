@@ -47,6 +47,7 @@ type DSTest struct {
 
 func NewTester(i DSTester, ll int, seed int64) *DSTest {
 	d := DSTest{Seed: seed, Ll: ll, I: i}
+	d.I = i
 	//d.Remaining = 1<<32
 	d.R = rand.New(rand.NewSource(int64(seed))) // no lock
 	return &d

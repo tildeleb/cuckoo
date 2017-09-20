@@ -1,4 +1,4 @@
-// Copyright © 2014 Lawrence E. Bakst. All rights reserved.
+// Copyright © 2014-2017 Lawrence E. Bakst. All rights reserved.
 
 // small step towards creating a package that can test data structures
 package dstest

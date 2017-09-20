@@ -1,4 +1,4 @@
-// Copyright © 2014 Lawrence E. Bakst. All rights reserved.
+// Copyright © 2014-2017 Lawrence E. Bakst. All rights reserved.
 
 // This program provides a test interface to the cuckoo hash tables.
 // The only test it currently knows how to do is crete the table,
@@ -62,19 +62,6 @@ var mp = flag.String("mp", "", "write memory profile to this file")
 
 var bseed = int64(0) // seed for base values
 var cseed = int64(0) // seed for evictions
-
-func statAdd(tot, add *cuckoo.Counters) {
-	tot.Elements += add.Elements
-	tot.Inserts += add.Inserts
-	tot.Attempts += add.Attempts
-	tot.Deletes += add.Deletes
-	tot.Lookups += add.Lookups
-	tot.Bumps += add.Bumps
-	tot.Aborts += add.Aborts
-	tot.Iterations += add.Iterations
-	tot.Fails += add.Fails
-	tot.BucketSize = add.BucketSize
-}
 
 func hu(v uint64, u string) hrff.Int64 {
 	return hrff.Int64{V: int64(v), U: u}
@@ -245,7 +232,8 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 		print(3, fs.Used)
 
 		c.Elements = savElements
-		statAdd(cs, &c.Counters)
+		cs.CountersAdd(&c.Counters)
+		//statAdd(cs, &c.Counters)
 		if d.Ll < td.Ll {
 			td.Ll = d.Ll
 			//fmt.Printf("setting td.Ll=%d\n", td.Ll)
@@ -346,8 +334,10 @@ func runTrials() {
 	api := float64(c.Attempts) / float64(c.Inserts)
 	ipi := float64(c.Iterations) / float64(c.Inserts)
 
+	c2 := (d.I).(*cuckoo.Cuckoo)
+
 	fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, max=%d, trials=%d, fails=%d, limited=%v, avg=%0.4f\n",
-		*ntables, nb, *nslots, tot, max, *ntrials, fails, d.Limited, avg)
+		c2.Tables, nb, *nslots, tot, max, *ntrials, fails, d.Limited, avg)
 	fmt.Printf("trials: MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f\n", d.Mr, d.Ll, c.Aborts, bpi, api, ipi)
 	//fmt.Printf("trials: MaxRemaining=%d\n", dstest.Mr)
 	//fmt.Printf("trials: LowestLevel=%d\n", dstest.Ll)

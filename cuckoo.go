@@ -1,4 +1,4 @@
-// Copyright © 2014 Lawrence E. Bakst. All rights reserved.
+// Copyright © 2014-2017 Lawrence E. Bakst. All rights reserved.
 
 // Package cuckoo implements a cuckoo hash table.
 // With the correct options this data structure can achieve 5X more storage efficiency
@@ -151,6 +151,60 @@ func (b *buf) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+/*
+	BucketSize    int  // size of a single bucket (1 slot) in bytes
+	BucketsSize   int  // size of a single bucket * slots
+	Elements      int  // number of elements currently residing in the data structure
+	Inserts       int  // number of time insert has been called
+	Attempts      int  // number of attempts to insert all elements
+	Iterations    int  // number of iterations through all the hash tables to attemps an insert
+	Deletes       int  // number of times delete has been called
+	Lookups       int  // number of lookups
+	Aborts        int  // number of times an insert had to aborted
+	Fails         int  // number of times that insert failed
+	Bumps         int  // number of evicted buckets
+	TableGrows    int  // number of hash tables added
+	MaxPathLen    int  // longest chain of bumps
+	MaxAttempts   int  // highest number of attempts
+	MaxIterations int  // highest number of interations
+	MinLevel      int  // lowest level achieved
+	Limited       bool // were inserts limited by a load factor
+*/
+
+func (c *Counters) CountersAdd(add *Counters) {
+	var max = func(a, b int) int {
+		if a < b {
+			return b
+		}
+		return a
+	}
+	var min = func(a, b int) int {
+		if a < b {
+			return a
+		}
+		return b
+	}
+	c.Elements += add.Elements
+	c.Inserts += add.Inserts
+	c.Attempts += add.Attempts
+	c.Iterations += add.Iterations
+	c.Deletes += add.Deletes
+	c.Lookups += add.Lookups
+	c.Aborts += add.Aborts
+	c.Fails += add.Fails
+	c.Bumps += add.Bumps
+	c.TableGrows += add.TableGrows
+	//tot.BucketSize = add.BucketSize
+	//tot.BucketsSize = add.BucketsSize
+	c.MaxPathLen = max(c.MaxPathLen, add.MaxPathLen)
+	c.MaxAttempts = max(c.MaxAttempts, add.MaxAttempts)
+	c.MaxIterations = max(c.MaxIterations, add.MaxIterations)
+	c.MinLevel = min(c.MinLevel, add.MinLevel)
+	if add.Limited {
+		c.Limited = true
+	}
+}
+
 // Get the value of some of the counters, need to finish them all XXX
 func (c *Cuckoo) GetCounter(s string) int {
 	switch s {
@@ -226,7 +280,7 @@ func (c *Cuckoo) addTable(growFactor int) {
 		if len(newTable[b]) == 0 {
 			newTable[b] = makeSlots(newTable[b], c.Slots)
 			for s, _ := range newTable[b] {
-				newTable[b][s].val = 0
+				newTable[b][s].val = c.emptyValue // ???
 			}
 		}
 	}
@@ -264,6 +318,7 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 		return nil
 	}
 
+	//fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
 	c := &Cuckoo{}
 
 	h, err := c.setHash(hashName)
@@ -328,7 +383,7 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 			//c.tbs[t][b] = make(Buckets, slots, slots)
 			// the following not needed
 			for s, _ := range c.tbs[t][b] {
-				c.tbs[t][b][s].val = 0
+				c.tbs[t][b][s].val = c.emptyValue
 			}
 		}
 	}
@@ -384,77 +439,6 @@ func (c *Cuckoo) SetEvictionSeed(seed int64) {
    }
    rand.Seed(seed)
 */
-
-func (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
-	// ok we have to copy the key now as all the other hash functions want a slice of bytes.
-	switch c.NumericKeySize {
-	case 4:
-		c.buf.b = c.buf.base[0:4]
-		c.buf.b[0], c.buf.b[1], c.buf.b[2], c.buf.b[3] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24)
-	case 8:
-		c.buf.b = c.buf.base[0:8]
-		c.buf.b[0], c.buf.b[1], c.buf.b[2], c.buf.b[3], c.buf.b[4], c.buf.b[5], c.buf.b[6], c.buf.b[7] =
-			byte(key), byte(key>>8), byte(key>>16), byte(key>>24), byte(key>>32), byte(key>>40), byte(key>>48), byte(key>>56)
-	default:
-		c.buf.Reset()
-		if err := c.encoder.Encode(&key); err != nil {
-			//fmt.Printf("Write: err=%q\n", err)
-			panic("Insert: binary.Write")
-		}
-		c.buf.b = c.buf.base[0:c.buf.i]
-	}
-	if c.hfb != nil {
-		h = c.hfb(c.buf.b, seed) % uint64(c.Buckets)
-	} else {
-		hf.Reset()
-		hf.Write(c.buf.b)
-		h1 := uint64(hf.Sum64())
-		h = h1 % uint64(c.Buckets)
-	}
-	return
-}
-
-// inlined functions
-
-// the following 5 functions/methods can be inlined.
-func ui32tob(b []byte, key Key) {
-	b[0], b[1], b[2], b[3] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24)
-}
-
-func ui64tob(b []byte, key Key) {
-	b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24), byte(key>>32), byte(key>>40), byte(key>>48), byte(key>>56)
-}
-
-func ui64tob1(b []byte, key Key) {
-	b[0], b[1], b[2], b[3] = byte(key), byte(key>>8), byte(key>>16), byte(key>>24)
-}
-
-func ui64tob2(b []byte, key Key) {
-	b[4], b[5], b[6], b[7] = byte(key>>32), byte(key>>40), byte(key>>48), byte(key>>56)
-}
-
-// Given a key and a hash function to use, calculate the hash for the specified table.
-// To do this we have to serialize the key
-// To get this to inline the optimization for NumericKeySize == 4 was moved to _calcHash ???
-// check to see this this inlines with SSA
-func (c *Cuckoo) calcHash(hf hash.Hash64, seed uint64, key Key) uint64 {
-	// speed up a common key case
-	//fmt.Printf("%d ", c.NumericKeySize)
-	if c.hashno == aes {
-		if c.NumericKeySize == 8 && c.hf64 != nil {
-			//fmt.Printf("8")
-			//ui64tob1(c.buf.b, key)
-			//ui64tob2(c.buf.b, key)
-			return c.hf64(uint64(key), seed)
-		} else {
-			if c.NumericKeySize == 4 && c.hf32 != nil {
-				ui32tob(c.buf.b, key)
-				return c.hf32(uint32(key), seed)
-			}
-		}
-	}
-	return c._calcHash(hf, seed, key)
-}
 
 // Given key calculate the hash for the specified table
 func (c *Cuckoo) calcHashForTable(t int, key Key) uint64 {
@@ -738,6 +722,7 @@ again:
 		if c.grow {
 			fmt.Printf("insert: add a table, level=%d, key=%v, val=%v\n", level, k, v)
 			c.TableGrows++
+			c.Tables++
 			c.addTable(0)
 			goto again
 		}

@@ -1,4 +1,4 @@
-// Copyright © 2014 Lawrence E. Bakst. All rights reserved.
+// Copyright © 2014-2017 Lawrence E. Bakst. All rights reserved.
 package cuckoo_test
 
 import . "leb.io/cuckoo"
@@ -45,6 +45,13 @@ type config struct {
 	slots  int
 	n      int
 }
+
+const ef = 1.01
+const add = 32.0
+const lf = 1.0
+const flf = 1.0
+const tables = 2
+const slots = 8
 
 var cf = config{ef: 1.01, add: 32.0, lf: 1.0, flf: 0.9, tables: 4, slots: 8, n: 1000000}
 
@@ -98,13 +105,6 @@ func CreateKeysValuesMap(b, n int) *KeySet {
 func init() {
 	ks = CreateKeysValuesMap(b, n)
 }
-
-const ef = 1.01
-const add = 32.0
-const lf = 1.0
-const flf = 1.0
-const tables = 2
-const slots = 8
 
 type IB interface {
 	Logf(string, ...interface{})
@@ -191,6 +191,7 @@ func benchmarkCuckooInsert(ef, add, lf float64, tables, slots int, hash string, 
 }
 
 func benchmarkCuckooSearch(ef, add, lf float64, tables, slots int, hash string, b *testing.B) {
+	var cf = config{ef: 1.01, add: 32.0, lf: 1.0, flf: 0.8, tables: 4, slots: 8, n: 1000000}
 	d := setup(b, cf)
 	for i := 0; i < b.N; i++ {
 		d.I.Insert(ks.Keys[i%n], ks.Vals[i%n])

@@ -1,3 +1,4 @@
+// Copyright © 2014-2017 Lawrence E. Bakst. All rights reserved.
 // +build slice
 
 package cuckoo

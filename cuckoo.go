@@ -258,8 +258,13 @@ func (c *Cuckoo) addHash() {
 	c.hfs = append(c.hfs, c.getHash(c.HashName, uint64(c.seeds[len(c.seeds)-1])))
 	c.hs = append(c.hs, 0)
 	c.TableCounters = append(c.TableCounters, TableCounters{Size: c.Buckets * c.Slots})
-	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 	//fmt.Printf("c.hf=%#v\n", c.hf)
+	//fmt.Printf("c.seeds=%#v\n", c.seeds)
+	//fmt.Printf("c.hfs=%#v\n", c.hfs)
+	//fmt.Printf("c.hs=%#v\n", c.hs)
+	//fmt.Printf("c.seeds=%d\n", len(c.seeds))
+	//fmt.Printf("c.hfs=%#v\n", len(c.hfs))
+	//fmt.Printf("c.hs=%#v\n", len(c.hs))
 	//fmt.Printf("c.TableStats=%#v\n", c.TableStats)
 	/*
 		if len(c.seeds) > 1 {
@@ -722,7 +727,7 @@ again:
 		if c.grow {
 			fmt.Printf("insert: add a table, level=%d, key=%v, val=%v\n", level, k, v)
 			c.TableGrows++
-			c.Tables++
+			//c.Tables++
 			c.addTable(0)
 			goto again
 		}
@@ -741,6 +746,7 @@ again:
 	}
 	c.rot++
 	c.rot %= c.Tables
+	//fmt.Printf("c.rot=%d, c.Tables=%d\n", c.rot, c.Tables)
 	//fmt.Printf("%d/%d ", c.Attempts - sva, c.Iterations - svi)
 	return
 }

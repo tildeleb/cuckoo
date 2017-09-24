@@ -113,7 +113,7 @@ func (d *DSTest) _fill(tables, buckets, slots, ibase int, flf float64, verbose, 
 				if printLevels {
 					fmt.Printf("%d/%d\n", l, lowestLevel)
 				}
-				fmt.Printf("    fill: failed @ %d/%d, remain=%d, MaxPathLen=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n",
+				fmt.Printf("    fill: %d/%d, remain=%d, MaxPathLen=%d, bumps=%d, %d/%d=%0.4f, level=%d, bpi=%0.2f\n",
 					i, amax, amax-i, d.I.GetCounter("MaxPathLen"), d.I.GetCounter("bumps"), d.I.GetCounter("elements"), d.I.GetCounter("size"),
 					fs.Load, l, float64(d.I.GetCounter("bumps"))/float64(d.I.GetCounter("inserts")))
 			}

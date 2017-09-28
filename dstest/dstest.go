@@ -191,6 +191,10 @@ func (d *DSTest) Verify(base, n int, progress bool) bool {
 	onep := n / 100
 	thresh := onep
 	cnt := 0
+	if false {
+		fmt.Printf("    verify: base=%d, base+n=%d, n=%d\n", base, base+n, n)
+	}
+	//fmt.Printf("    verify: base=%d, base+n=%d, n=%d\n", base, base+n, n)
 	for i := base; i < base+n; i++ {
 		cnt++
 		v, ok := d.I.Lookup(c.Key(i))

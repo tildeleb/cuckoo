@@ -33,6 +33,7 @@ func tdiff(begin, end time.Time) time.Duration {
 var ranb = flag.Bool("rb", false, "ignore base, use random base value")
 var ranr = flag.Bool("rr", false, "random run, seed for base values is random")
 var rane = flag.Bool("re", false, "use a random seed for evictions source")
+var ranh = flag.Bool("rh", false, "use a random seed for table hash functions")
 var seedb = flag.Int("sb", 0, "seed for base values")
 var seede = flag.Int("se", 0, "seed for eviction values")
 
@@ -58,6 +59,7 @@ var pt = flag.Bool("pt", false, "print summary for each trail")
 var ps = flag.Bool("ps", false, "print stats at the end of all trails")
 var pr = flag.Bool("pr", false, "print progress")
 var pf = flag.Bool("pf", false, "print info on failure")
+var trace = flag.Bool("trace", false, "produce trace on stdout")
 var verbose = flag.Bool("v", false, "verbose")
 
 var cp = flag.String("cp", "", "write cpu profile to file")
@@ -131,6 +133,7 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 	}
 
 	cs = &acs
+	cs.InitCounters()
 	tot := float64(0)
 	fails = 0
 
@@ -160,6 +163,9 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 		c := cuckoo.New(tables, buckets, slots, int64(*seede), lf, *hash)
 		if c == nil {
 			panic("New failed")
+		}
+		if *trace {
+			c.Trace = true
 		}
 		d = dstest.NewTester(c, *startLevel, bseed) // ???
 		//d.I = c
@@ -194,7 +200,7 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 		runtime.ReadMemStats(&msa)
 		//dump_mstats(&msa, true, false, false)
 		bpi := float64(c.Bumps) / float64(c.Inserts)
-		api := float64(c.Attempts) / float64(c.Inserts)
+		ppi := float64(c.Probes) / float64(c.Inserts)
 		ipi := float64(c.Iterations) / float64(c.Inserts)
 
 		rmax = fs.Thresh
@@ -264,8 +270,8 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 			fmt.Printf("trials: fs=%#v\n", fs)
 		}
 		if *pt || printStatusOneShot || (*pf && fs.Failed) {
-			fmt.Printf("trials: trial=%d, fails=%d, L=%v, F=%v, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxAttemps=%d, MaxIterations=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",
-				t, fails, fs.Limited, fs.Failed, fs.Remaining, c.Aborts, fs.LowestLevel, c.MaxAttempts, c.MaxIterations, bpi, api, ipi, float64(c.Elements)/float64(c.Size), c.Elements, c.Size)
+			fmt.Printf("trials: trial=%d, TraceCnt=%d, fails=%d, L=%v, F=%v, Remaining=%d, Aborts=%d, LowestLevel=%d, MaxProbes=%d, MaxIterations=%d, bpi=%0.2f, ppi=%0.2f, ipi=%0.4f, lf=%0.2f (%d/%d)\n",
+				t, c.TraceCnt, fails, fs.Limited, fs.Failed, fs.Remaining, c.Aborts, fs.LowestLevel, c.MaxProbes, c.MaxIterations, bpi, ppi, ipi, float64(c.Elements)/float64(c.Size), c.Elements, c.Size)
 			fmt.Printf("trials: fs=%#v\n", fs)
 			printStatusOneShot = false
 		}
@@ -339,14 +345,15 @@ func runTrials() {
 	//fmt.Printf("dbg: c=%#v\n", c)
 
 	bpi := float64(c.Bumps) / float64(c.Inserts)
-	api := float64(c.Attempts) / float64(c.Inserts)
+	ppi := float64(c.Probes) / float64(c.Inserts)
 	ipi := float64(c.Iterations) / float64(c.Inserts)
 
 	c2 := (d.I).(*cuckoo.Cuckoo)
 
-	fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, used=%d, max=%d, lf=%0.2f, trials=%d, fails=%d, limited=%v, avg=%0.4f\n",
-		c2.Tables, nb, *nslots, tot, used, max, *lf, *ntrials, fails, d.Limited, avg)
-	fmt.Printf("trials: MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, api=%0.2f, ipi=%0.4f\n", d.Mr, d.Ll, c.Aborts, bpi, api, ipi)
+	fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, used=%d, max=%d, lf=%0.2f, trials=%h, fails=%d, limited=%v, avg=%0.4f\n",
+		c2.Tables, nb, *nslots, tot, used, max, *lf, _ntrials, fails, d.Limited, avg)
+	fmt.Printf("trials: MinTraceCnt=%d, MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, ppi=%0.2f, ipi=%0.4f\n",
+		c.MinTraceCnt, d.Mr, d.Ll, c.Aborts, bpi, ppi, ipi)
 	//fmt.Printf("trials: MaxRemaining=%d\n", dstest.Mr)
 	//fmt.Printf("trials: LowestLevel=%d\n", dstest.Ll)
 	if *ps {

@@ -13,7 +13,7 @@ import (
 	"github.com/alecthomas/binary"
 	"hash"
 	"leb.io/cuckoo/primes"
-	_ "math"
+	"math"
 	"math/rand"
 	"unsafe"
 )
@@ -46,18 +46,20 @@ type Counters struct {
 	BucketsSize   int  // size of a single bucket * slots
 	Elements      int  // number of elements currently residing in the data structure
 	Inserts       int  // number of time insert has been called
-	Attempts      int  // number of attempts to insert all elements
-	Iterations    int  // number of iterations through all the hash tables to attemps an insert
+	Probes        int  // number of probes to find a free element
+	Iterations    int  // number of iterations through all the hash tables in an attemp an insert
 	Deletes       int  // number of times delete has been called
 	Lookups       int  // number of lookups
 	Aborts        int  // number of times an insert had to aborted
 	Fails         int  // number of times that insert failed
 	Bumps         int  // number of evicted buckets
 	TableGrows    int  // number of hash tables added
+	TraceCnt      int  // number of trance records out
 	MaxPathLen    int  // longest chain of bumps
-	MaxAttempts   int  // highest number of attempts
+	MaxProbes     int  // highest number of probes
 	MaxIterations int  // highest number of interations
 	MinLevel      int  // lowest level achieved
+	MinTraceCnt   int  // lowest trace count
 	Limited       bool // were inserts limited by a load factor
 }
 
@@ -118,6 +120,7 @@ type Cuckoo struct {
 	emptyKeyValid  bool       // something store here
 	ekiz           bool       // empty key is zero
 	grow           bool       // are we allowed to add a hash table as needed?
+	Trace          bool       // produce a trace on stdout
 	NumericKeySize int        // if key is numeric what is size in bytes
 }
 
@@ -171,6 +174,11 @@ func (b *buf) Write(p []byte) (n int, err error) {
 	Limited       bool // were inserts limited by a load factor
 */
 
+func (c *Counters) InitCounters() {
+	c.MinLevel = InitialStartLevel
+	c.MinTraceCnt = math.MaxInt64
+}
+
 func (c *Counters) CountersAdd(add *Counters) {
 	var max = func(a, b int) int {
 		if a < b {
@@ -186,7 +194,7 @@ func (c *Counters) CountersAdd(add *Counters) {
 	}
 	c.Elements += add.Elements
 	c.Inserts += add.Inserts
-	c.Attempts += add.Attempts
+	c.Probes += add.Probes
 	c.Iterations += add.Iterations
 	c.Deletes += add.Deletes
 	c.Lookups += add.Lookups
@@ -197,9 +205,10 @@ func (c *Counters) CountersAdd(add *Counters) {
 	//tot.BucketSize = add.BucketSize
 	//tot.BucketsSize = add.BucketsSize
 	c.MaxPathLen = max(c.MaxPathLen, add.MaxPathLen)
-	c.MaxAttempts = max(c.MaxAttempts, add.MaxAttempts)
+	c.MaxProbes = max(c.MaxProbes, add.MaxProbes)
 	c.MaxIterations = max(c.MaxIterations, add.MaxIterations)
 	c.MinLevel = min(c.MinLevel, add.MinLevel)
+	c.MinTraceCnt = min(c.MinTraceCnt, add.TraceCnt)
 	if add.Limited {
 		c.Limited = true
 	}
@@ -344,7 +353,6 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 	c.n = uint64(buckets)
 	c.r = uint64(4294967296) / c.n // reciprocal of buckets
 	c.StartLevel, c.LowestLevel = InitialStartLevel, InitialLowestLevel
-	c.MinLevel = c.StartLevel
 	c.Size = tables * buckets * slots
 	c.MaxLoadFactor = loadFactor
 	c.HashName = hashName
@@ -365,7 +373,9 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 	c.TableCounters = make([]TableCounters, tables)
 
 	c.seeds = make([]uint64, tables, tables)
+	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 	c.seeds = c.seeds[0:0]
+	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 	c.hfs = make([]hash.Hash64, tables, tables)
 	c.hfs = c.hfs[0:0]
 	c.hs = make([]uint64, len(c.hfs))
@@ -508,7 +518,7 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 		for s, _ := range c.tbs[t][b] {
 			//fmt.Printf("Lookup: key=%d, table=%d, bucket=%d, slot=%d, found key=%d\n", key, t, b, s, c.tbs[t][b][s].key)
 			if c.tbs[t][b][s].key == key {
-				//fmt.Printf("Lookup: key=%d, value=%d, table=%d, bucket=%d, slot=%d\n", key, val, t, b, s)
+				//fmt.Printf("Lookup: table=%d, bucket=%d, slot=%d, key=%d, value=%d\n", t, b, s, key, c.tbs[t][b][s].val)
 				return c.tbs[t][b][s].val, true
 			}
 		}
@@ -584,6 +594,9 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		fmt.Printf(">\n")
 	}
 	ins = func(kx Key, vx Value) bool {
+		var sk Key
+		var sv Value
+		var pk Key
 		//c.calcHashes(kx)
 		//fmt.Printf("Insert: level=%d, key=%d, ", level, kx)
 		//phv()
@@ -618,10 +631,20 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			//fmt.Printf("Insert: next table, h=%#x, level=%d, table=%d, bucket=%d, key=%d, value=%d\n", h, level, t, b, k, v)
 			// check all the slots in the current table and see if we can insert
 			for s, _ := range c.tbs[t][b] {
-				c.Attempts++
-				pk := c.tbs[t][b][s].key
+				c.Probes++
+				pk = c.tbs[t][b][s].key // avoid previous allocation
+				c.TraceCnt++
+				if c.Trace {
+					fmt.Printf("{%q: %d, %q: %d, %q: %q, %q: %d, %q: %d, %q: %d, %q: %v, %q: %v},\n",
+						"i", c.TraceCnt, "l", level, "op", "P", "t", t, "b", b, "s", s, "k", k, "v", v)
+				}
 				if pk == c.emptyKey || pk == k { // added replacement semantics
 					c.tbs[t][b][s].key, c.tbs[t][b][s].val = k, v
+					c.TraceCnt++
+					if c.Trace {
+						fmt.Printf("{%q: %d, %q: %d, %q: %q, %q: %d, %q: %d, %q: %d, %q: %v, %q: %v},\n",
+							"i", c.TraceCnt, "l", level, "op", "I", "t", t, "b", b, "s", s, "k", k, "v", v)
+					}
 					if pk == c.emptyKey || pk == k {
 						//fmt.Printf("Insert: h=%#x, level=%d, table=%d, bucket=%d, slot=%d, pk=%d, key=%d, value=%d\n", h, level, t, b, s, pk, k, v)
 					}
@@ -637,11 +660,21 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			c.TableCounters[t].Bumps++
 			victim := c.rbetween(0, c.Slots-1)
 			//fmt.Printf("insert: level=%d, bump value=%d for value=%d, table=%d, bucket=%d, slot=%d\n", level, c.tbs[t][b][victim].val, val, t, b, victim)
-			bucket := c.tbs[t][b][victim]
+			sk, sv = c.tbs[t][b][victim].key, c.tbs[t][b][victim].val // avoid previous stack allocation
+			c.TraceCnt++
+			if c.Trace {
+				fmt.Printf("{%q: %d, %q: %d, %q: %q, %q: %d, %q: %d, %q: %d, %q: %v, %q: %v},\n",
+					"i", c.TraceCnt, "l", level, "op", "E", "t", t, "b", b, "s", victim, "k", sk, "v", v)
+			}
 			c.tbs[t][b][victim].key = k
 			c.tbs[t][b][victim].val = v
-			k = bucket.key
-			v = bucket.val
+			c.TraceCnt++
+			if c.Trace {
+				fmt.Printf("{%q: %d, %q: %d, %q: %q, %q: %d, %q: %d, %q: %d, %q: %v, %q: %v},\n",
+					"i", c.TraceCnt, "l", level, "op", "I", "t", t, "b", b, "s", victim, "k", k, "v", v)
+			}
+			k = sk
+			v = sv
 			//c.calcHashes(k) ??? XXX ???
 			//fmt.Printf("insert: level=%d, new key=%d, val=%d\n", level, k, v)
 			t++
@@ -701,7 +734,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 	calls++
 	k = key
 	v = val
-	sva, svi := c.Attempts, c.Iterations
+	sva, svi := c.Probes, c.Iterations
 	level = ilevel
 again:
 	if c.Elements >= c.MaxElements {
@@ -732,8 +765,8 @@ again:
 			goto again
 		}
 	}
-	if c.Attempts-sva > c.MaxAttempts {
-		c.MaxAttempts = c.Attempts - sva
+	if c.Probes-sva > c.MaxProbes {
+		c.MaxProbes = c.Probes - sva
 	}
 	if c.Iterations-svi > c.MaxIterations {
 		c.MaxIterations = c.Iterations - svi

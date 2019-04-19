@@ -81,7 +81,7 @@ func (d *DSTest) _fill(tables, buckets, slots, ibase int, flf float64, verbose, 
 	fs.Used = max
 	fs.Thresh = max
 	amax := base + max
-	//fmt.Printf("_fill: base=%d, max=%d\n", base, max)
+	//fmt.Printf("_fill: base=%d, amax=%d, max=%d\n", base, amax, max)
 	fs.Load = float64(1.0)
 	cnt := 1
 	svi := amax

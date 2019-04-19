@@ -1,32 +1,32 @@
-// quick 10 minute tranliteration of plan9/p9p primes.c
+// quick 10 minute transliteration of plan9/p9p primes.c
 package primes
 
 import "math"
 
 var big = 9.007199254740992e15
 
-var	pt = []int{
-	2,  3,  5,  7, 11, 13, 17, 19, 23, 29,
+var pt = []int{
+	2, 3, 5, 7, 11, 13, 17, 19, 23, 29,
 	31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
-	73, 79, 83, 89, 97,101,103,107,109,113,
-	127,131,137,139,149,151,157,163,167,173,
-	179,181,191,193,197,199,211,223,227,229,
+	73, 79, 83, 89, 97, 101, 103, 107, 109, 113,
+	127, 131, 137, 139, 149, 151, 157, 163, 167, 173,
+	179, 181, 191, 193, 197, 199, 211, 223, 227, 229,
 }
 
 var wheel = []int{
 	10, 2, 4, 2, 4, 6, 2, 6, 4, 2,
-	 4, 6, 6, 2, 6, 4, 2, 6, 4, 6,
-	 8, 4, 2, 4, 2, 4, 8, 6, 4, 6,
-	 2, 4, 6, 2, 6, 6, 4, 2, 4, 6,
-	 2, 6, 4, 2, 4, 2, 10, 2,
+	4, 6, 6, 2, 6, 4, 2, 6, 4, 6,
+	8, 4, 2, 4, 2, 4, 8, 6, 4, 6,
+	2, 4, 6, 2, 6, 6, 4, 2, 4, 6,
+	2, 6, 4, 2, 4, 2, 10, 2,
 }
-var	table [1000]byte
+var table [10000]byte
 var tsiz8 = len(table) * 8
 var bittab = []byte{1, 2, 4, 8, 16, 32, 64, 128}
 
 func mark(nn float64, k int) {
 	t1, _ := math.Modf(nn / float64(k))
-	j := int(float64(k) * t1 - nn)
+	j := int(float64(k)*t1 - nn)
 	if j < 0 {
 		j += k
 	}
@@ -70,8 +70,8 @@ func Primes(nn, limit float64, f func(v int)) {
 		nn = 230
 	}
 
-	temp, _ := math.Modf(nn/2)
-	nn = 2.0 * temp + 1
+	temp, _ := math.Modf(nn / 2)
+	nn = 2.0*temp + 1
 
 	// clear the sieve table.
 	for {
@@ -79,7 +79,7 @@ func Primes(nn, limit float64, f func(v int)) {
 			table[k] = 0
 		}
 
- 		// run the sieve.	
+		// run the sieve.
 		max := int(math.Sqrt(nn + float64(tsiz8)))
 		mark(nn, 3)
 		mark(nn, 5)
@@ -111,6 +111,6 @@ func Primes(nn, limit float64, f func(v int)) {
 }
 
 func NextPrime(n int) (p int) {
-	Primes(float64(n), 0.0, func(v int) {p = v})
+	Primes(float64(n), 0.0, func(v int) { p = v })
 	return
 }

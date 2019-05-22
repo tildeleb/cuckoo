@@ -3,9 +3,9 @@
 
 package cuckoo
 
-const Slots = 8
+const Nslots = 8
 
-type Buckets [Slots]Bucket // slots
-func makeSlots(b Buckets, slots int) Buckets {
-	return b
+type Slots [Nslots]Bucket // slots
+func makeSlots(s Slots, slots int) Slots {
+	return s
 }

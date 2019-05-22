@@ -29,12 +29,12 @@ func (c *Cuckoo) _calcHash(hf hash.Hash64, seed uint64, key Key) (h uint64) {
 		c.buf.b = c.buf.base[0:c.buf.i]
 	}
 	if c.hfb != nil {
-		h = c.hfb(c.buf.b, seed) % uint64(c.Buckets)
+		h = c.hfb(c.buf.b, seed) % uint64(c.Nbuckets)
 	} else {
 		hf.Reset()
 		hf.Write(c.buf.b)
 		h1 := uint64(hf.Sum64())
-		h = h1 % uint64(c.Buckets)
+		h = h1 % uint64(c.Nbuckets)
 	}
 	return
 }

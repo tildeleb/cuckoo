@@ -43,7 +43,7 @@ type Bucket struct {
 // Counters. All public but we now have an API to access them.
 type Counters struct {
 	BucketSize    int  // size of a single bucket (1 slot) in bytes
-	BucketsSize   int  // size of a single bucket * slots
+	SlotsSize     int  // size of a single bucket * slots
 	Elements      int  // number of elements currently residing in the data structure
 	Inserts       int  // number of time insert has been called
 	Probes        int  // number of probes to find a free element
@@ -65,7 +65,7 @@ type Counters struct {
 
 // Per table stats, again all public.
 type TableCounters struct {
-	Size     int // c.Buckets * c.Slots
+	Size     int // c.Nbuckets * c.Nslots
 	Elements int // number of elements currently residing in this hash table
 	Bumps    int // number of evicted buckets
 }
@@ -82,18 +82,28 @@ type Config struct {
 	MaxLoadFactor float64 // don't allow more than MaxElements = Tables * Buckets * Slots elements
 	StartLevel    int     // starting value for level which is decremented for each insertion attempt
 	LowestLevel   int     // This is usually a negative number and defines how far level can be decremented
-	Tables        int     // number of hash tables
-	Buckets       int     // number of buckets
-	Slots         int     // number of slots
+	Ntables       int     // number of hash tables
+	Nbuckets      int     // number of buckets
+	Nslots        int     // number of slots
 	Size          int     // Size = Tables * Buckets * Slots
 	MaxElements   int     // maximum number of elements the data structure can hold
 	HashName      string  // name of hashing function used
 }
 
+// A Table is a 2 dimensional matrix of buckets, the first index is the bucket number
+// and the second index is the slot number
+type Table struct {
+	buckets       []Slots     // each indexed bucket contains a slice of Bucket, called Slots, defined in kv_array.go or kv_slice.go
+	seed          uint64      // seed used per table to make a unique hash function
+	hfs           hash.Hash64 // hash function to use, the design allows for different hash functions per table but that is not used
+	TableCounters             // per Table stats
+}
+
 // The main data structure for cuckoo hash.
 // Most fields are private but the counters are public.
+//indexed Slots defined in kv_array.go or kv_slice.go
 type Cuckoo struct {
-	tbs           [][]Buckets     // indexed Buckets defined in kv_array.go or kv_slice.go
+	tbs           [][]Slots       // a slice  of Tables, each table having a slice of Slots, each slot holding a Bucket
 	TableCounters []TableCounters // per table stats
 	seeds         []uint64        // seeds used per table
 	hfs           []hash.Hash64   // one for each table + the last one reserved for fingerprints
@@ -265,13 +275,13 @@ func (c *Cuckoo) rbetween(a int, b int) int {
 
 // Dynamicall exapnd the data structure by adding a hash table. Called from Insert and friends.
 func (c *Cuckoo) addTable(growFactor float64) {
-	//fmt.Printf("table: %d\n", c.Tables)
-	c.Tables++
-	buckets := c.Buckets
-	slots := c.Slots
+	//fmt.Printf("table: %d\n", c.Ntables)
+	c.Ntables++
+	buckets := c.Nbuckets
+	slots := c.Nslots
 	c.Size += buckets * slots
 	c.MaxElements = int(float64(c.Size) * c.MaxLoadFactor)
-	newTable := make([]Buckets, buckets, buckets)
+	newTable := make([]Slots, buckets, buckets)
 	for b, _ := range newTable {
 		if len(newTable[b]) == 0 {
 			newTable[b] = makeSlots(newTable[b], slots)
@@ -286,7 +296,7 @@ func (c *Cuckoo) addTable(growFactor float64) {
 	c.hfs = append(c.hfs, c.getHash(c.HashName, uint64(c.seeds[len(c.seeds)-1])))
 	//fmt.Printf("c.hfs=%v\n", c.seeds)
 	c.hs = append(c.hs, 0)
-	c.TableCounters = append(c.TableCounters, TableCounters{Size: c.Buckets * c.Slots})
+	c.TableCounters = append(c.TableCounters, TableCounters{Size: c.Nbuckets * c.Nslots})
 	// perhaps reset the stats ???
 }
 
@@ -298,13 +308,12 @@ func (c *Cuckoo) addTable(growFactor float64) {
 // However, often the default, the Go zero initization suffices.
 // You can pass an eseed to seed the random number generator used to select a bucket for eviction.
 func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
-	var bs Buckets
+	var s Slots
 	var b Bucket
-	//var akey Key
 
-	fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
-	if len(bs) > 0 && len(bs) != slots {
-		fmt.Printf("New: slot mismatch compiled slots=%d, requested slots=%d\n", len(bs), slots)
+	//fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
+	if len(s) > 0 && len(s) != slots {
+		fmt.Printf("New: slot mismatch compiled slots=%d, requested slots=%d\n", len(s), slots)
 		return nil
 	}
 
@@ -335,7 +344,7 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 		c.b = c.b[:]
 	*/
 
-	c.Buckets, c.Slots = buckets, slots
+	c.Nbuckets, c.Nslots = buckets, slots
 	c.buf = newBuf(2048)
 	c.encoder = binary.NewEncoder(c.buf)
 	c.grow = true
@@ -355,7 +364,7 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 	c.rnd = r
 
 	c.BucketSize = int(unsafe.Sizeof(b))
-	c.BucketsSize = int(unsafe.Sizeof(bs))
+	c.SlotsSize = int(unsafe.Sizeof(s))
 	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 
 	//fmt.Printf("c.seeds=%#v\n", c.seeds)
@@ -363,7 +372,7 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 	//fmt.Printf("c.hf=%#v\n", c.hf)
 	//fmt.Printf("New: c.Config=%#v\n", c.Config)
 
-	c.tbs = [][]Buckets{}
+	c.tbs = [][]Slots{}
 	c.TableCounters = []TableCounters{}
 	c.seeds = []uint64{}
 	c.hfs = []hash.Hash64{}
@@ -479,7 +488,7 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 	//c.calcHashes(key)
 	for t, _ := range c.tbs {
 		//ha := c.calcHashForTable(t, key)
-		//ba := ha % uint32(c.Buckets)
+		//ba := ha % uint32(c.Nbuckets)
 
 		// this was an experiment to see if pre-calculating the reciprocal would be faster than MOD
 		// it is by 10% for L1 fit and 3% for L2 fit, however switching to assembly might make it better than that.
@@ -493,7 +502,7 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 			}
 		*/
 		h := uint64(c.calcHashForTable(t, key))
-		b := h % uint64(c.Buckets)
+		b := h % uint64(c.Nbuckets)
 
 		/*
 			bb := uint32(b)
@@ -531,7 +540,7 @@ func (c *Cuckoo) Delete(key Key) (Value, bool) {
 
 	//c.calcHashes(key)
 	for t, _ := range c.tbs {
-		b := c.calcHashForTable(t, key) % uint64(c.Buckets)
+		b := c.calcHashForTable(t, key) % uint64(c.Nbuckets)
 		//b := c.hs[t]
 		/*
 			h := uint64(c.calcHashForTable(t, key))
@@ -597,7 +606,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 		for _, _ = range c.tbs {
 			// rotate which table we start inserts with
 			//ha := c.calcHashForTable(t, k)
-			//ba := ha % uint32(c.Buckets)
+			//ba := ha % uint32(c.Nbuckets)
 			/*
 				b := h - ((c.r * h) >> 32) * c.n
 				if b > c.n {
@@ -613,7 +622,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			h := uint64(c.calcHashForTable(t, k))
 			//fmt.Printf("h1=%#x, h=%#x\n", h1, h)
 			//h := uint64(k)
-			b := h % uint64(c.Buckets)
+			b := h % uint64(c.Nbuckets)
 
 			//fmt.Printf("Insert: next table, h=%#x, level=%d, table=%d, bucket=%d, key=%d, value=%d\n", h, level, t, b, k, v)
 			// check all the slots in the current table and see if we can insert
@@ -652,7 +661,7 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			bumps++
 			c.Bumps++
 			c.TableCounters[t].Bumps++
-			victim := c.rbetween(0, c.Slots-1)
+			victim := c.rbetween(0, c.Nslots-1)
 			//fmt.Printf("insert: level=%d, bump value=%d for value=%d, table=%d, bucket=%d, slot=%d\n", level, c.tbs[t][b][victim].val, val, t, b, victim)
 			sk, sv = c.tbs[t][b][victim].key, c.tbs[t][b][victim].val // avoid previous stack allocation
 			c.TraceCnt++
@@ -754,7 +763,7 @@ again:
 		if c.grow {
 			fmt.Printf("insert: add a table, level=%d, key=%v, val=%v\n", level, k, v)
 			c.TableGrows++
-			//c.Tables++
+			//c.Ntables++
 			c.addTable(0)
 			goto again
 		}
@@ -772,8 +781,8 @@ again:
 		c.MaxPathLen = bumps
 	}
 	c.rot++
-	c.rot %= c.Tables
-	//fmt.Printf("c.rot=%d, c.Tables=%d\n", c.rot, c.Tables)
+	c.rot %= c.Ntables
+	//fmt.Printf("c.rot=%d, c.Ntables=%d\n", c.rot, c.Ntables)
 	//fmt.Printf("%d/%d ", c.Attempts - sva, c.Iterations - svi)
 	return
 }

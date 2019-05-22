@@ -351,7 +351,7 @@ func runTrials() {
 	c2 := (d.I).(*cuckoo.Cuckoo)
 
 	fmt.Printf("trials: tables=%d, buckets=%d, slots=%d, size=%d, used=%d, max=%d, lf=%0.2f, trials=%h, fails=%d, limited=%v, avg=%0.4f\n",
-		c2.Tables, nb, *nslots, tot, used, max, *lf, _ntrials, fails, d.Limited, avg)
+		c2.Ntables, nb, *nslots, tot, used, max, *lf, _ntrials, fails, d.Limited, avg)
 	fmt.Printf("trials: MinTraceCnt=%d, MaxRemaining=%d, LowestLevel=%d, Aborts=%d, bpi=%0.2f, ppi=%0.2f, ipi=%0.4f\n",
 		c.MinTraceCnt, d.Mr, d.Ll, c.Aborts, bpi, ppi, ipi)
 	//fmt.Printf("trials: MaxRemaining=%d\n", dstest.Mr)

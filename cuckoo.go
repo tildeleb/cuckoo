@@ -93,22 +93,24 @@ type Config struct {
 // The main data structure for cuckoo hash.
 // Most fields are private but the counters are public.
 type Cuckoo struct {
-	tbs           [][]Buckets     // indexed defineBuckets defined in kv_array.go or kv_slice.go
+	tbs           [][]Buckets     // indexed Buckets defined in kv_array.go or kv_slice.go
+	TableCounters []TableCounters // per table stats
+	seeds         []uint64        // seeds used per table
+	hfs           []hash.Hash64   // one for each table + the last one reserved for fingerprints
+	hs            []uint64        // hash sums for each table and fingerprint, no longer used
 	r             uint64          // reciprocal of Buckets
 	n             uint64          // Size
 	rot           int             // table rotator
 	fp            bool            // first pass of table insert
 	Config                        // config data
 	Counters                      // stats
-	TableCounters []TableCounters // per table stats
-	hashno        int             // hash function
-	seeds         []uint64        // seeds used per table
-	hf            hash.Hash64     // generic hash function
-	hfs           []hash.Hash64   // one for each table + the last one reserved for fingerprints
-	hs            []uint64        // hash sums for each table and fingerprint
-	hf32          func(data uint32, seed uint64) uint64
-	hf64          func(data, seed uint64) uint64
-	hfb           func(data []byte, seed uint64) uint64
+
+	hashno int         // hash function
+	hf     hash.Hash64 // generic hash function
+	hf32   func(data uint32, seed uint64) uint64
+	hf64   func(data, seed uint64) uint64
+	hfb    func(data []byte, seed uint64) uint64
+
 	//b				[]byte			// used for result of marshalled data
 	buf     *buf            // for marshalling data
 	encoder *binary.Encoder // encoder for serializing Key
@@ -261,45 +263,30 @@ func (c *Cuckoo) rbetween(a int, b int) int {
 	return ret
 }
 
-// Add a hash function to a slice of hash functions.
-func (c *Cuckoo) addHash() {
-	c.seeds = append(c.seeds, uint64(len(c.seeds)+1))
-	c.hfs = append(c.hfs, c.getHash(c.HashName, uint64(c.seeds[len(c.seeds)-1])))
-	c.hs = append(c.hs, 0)
-	c.TableCounters = append(c.TableCounters, TableCounters{Size: c.Buckets * c.Slots})
-	//fmt.Printf("c.hf=%#v\n", c.hf)
-	//fmt.Printf("c.seeds=%#v\n", c.seeds)
-	//fmt.Printf("c.hfs=%#v\n", c.hfs)
-	//fmt.Printf("c.hs=%#v\n", c.hs)
-	//fmt.Printf("c.seeds=%d\n", len(c.seeds))
-	//fmt.Printf("c.hfs=%#v\n", len(c.hfs))
-	//fmt.Printf("c.hs=%#v\n", len(c.hs))
-	//fmt.Printf("c.TableStats=%#v\n", c.TableStats)
-	/*
-		if len(c.seeds) > 1 {
-			c.seeds[0], c.seeds[len(c.seeds) - 1] = c.seeds[len(c.seeds) - 1], c.seeds[0]
-			c.hf[0], c.hf[len(c.hf) - 1] = c.hf[len(c.hf) - 1], c.hf[0]
-			c.hs[0], c.hs[len(c.hs) - 1] = c.hs[len(c.hs) - 1], c.hs[0]
-		}
-	*/
-}
-
 // Dynamicall exapnd the data structure by adding a hash table. Called from Insert and friends.
-func (c *Cuckoo) addTable(growFactor int) {
+func (c *Cuckoo) addTable(growFactor float64) {
+	//fmt.Printf("table: %d\n", c.Tables)
 	c.Tables++
-	c.Size = c.Tables * c.Buckets * c.Slots
+	buckets := c.Buckets
+	slots := c.Slots
+	c.Size += buckets * slots
 	c.MaxElements = int(float64(c.Size) * c.MaxLoadFactor)
-	newTable := make([]Buckets, c.Buckets, c.Buckets)
+	newTable := make([]Buckets, buckets, buckets)
 	for b, _ := range newTable {
 		if len(newTable[b]) == 0 {
-			newTable[b] = makeSlots(newTable[b], c.Slots)
+			newTable[b] = makeSlots(newTable[b], slots)
 			for s, _ := range newTable[b] {
 				newTable[b][s].val = c.emptyValue // ???
 			}
 		}
 	}
 	c.tbs = append(c.tbs, newTable)
-	c.addHash()
+	c.seeds = append(c.seeds, uint64(len(c.seeds)+1))
+	//fmt.Printf("c.seeds=%v\n", c.seeds)
+	c.hfs = append(c.hfs, c.getHash(c.HashName, uint64(c.seeds[len(c.seeds)-1])))
+	//fmt.Printf("c.hfs=%v\n", c.seeds)
+	c.hs = append(c.hs, 0)
+	c.TableCounters = append(c.TableCounters, TableCounters{Size: c.Buckets * c.Slots})
 	// perhaps reset the stats ???
 }
 
@@ -315,7 +302,7 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 	var b Bucket
 	//var akey Key
 
-	//fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
+	fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
 	if len(bs) > 0 && len(bs) != slots {
 		fmt.Printf("New: slot mismatch compiled slots=%d, requested slots=%d\n", len(bs), slots)
 		return nil
@@ -339,24 +326,23 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 	if err != nil {
 		return nil
 	}
+	c.hashno = h
+	c.HashName = hashName
 
 	//fmt.Printf("unsafe.Sizeof(akey)=%d\n", unsafe.Sizeof(akey))
 	/*
 		c.b = make([]byte, unsafe.Sizeof(akey), unsafe.Sizeof(akey))
 		c.b = c.b[:]
 	*/
-	c.hashno = h
+
+	c.Buckets, c.Slots = buckets, slots
 	c.buf = newBuf(2048)
 	c.encoder = binary.NewEncoder(c.buf)
 	c.grow = true
-	c.Tables, c.Buckets, c.Slots = tables, buckets, slots
 	c.n = uint64(buckets)
 	c.r = uint64(4294967296) / c.n // reciprocal of buckets
 	c.StartLevel, c.LowestLevel = InitialStartLevel, InitialLowestLevel
-	c.Size = tables * buckets * slots
 	c.MaxLoadFactor = loadFactor
-	c.HashName = hashName
-	c.MaxElements = int(float64(c.Size) * c.MaxLoadFactor)
 	if len(emptyKey) > 0 {
 		c.emptyKey = emptyKey[0]
 	}
@@ -370,38 +356,22 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 
 	c.BucketSize = int(unsafe.Sizeof(b))
 	c.BucketsSize = int(unsafe.Sizeof(bs))
-	c.TableCounters = make([]TableCounters, tables)
+	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 
-	c.seeds = make([]uint64, tables, tables)
 	//fmt.Printf("c.seeds=%#v\n", c.seeds)
-	c.seeds = c.seeds[0:0]
-	//fmt.Printf("c.seeds=%#v\n", c.seeds)
-	c.hfs = make([]hash.Hash64, tables, tables)
-	c.hfs = c.hfs[0:0]
-	c.hs = make([]uint64, len(c.hfs))
-	c.hs = c.hs[0:0]
-	c.TableCounters = c.TableCounters[0:0]
-	for i := 0; i < tables; i++ {
-		c.addHash()
-	}
-	//fmt.Printf("c.seeds=%#v\n", c.seeds)
+	//fmt.Printf("c.hfs=%#v\n", c.hfs)
 	//fmt.Printf("c.hf=%#v\n", c.hf)
 	//fmt.Printf("New: c.Config=%#v\n", c.Config)
 
-	// init the table
-	c.tbs = make([][]Buckets, tables, tables)
-	for t, _ := range c.tbs {
-		c.tbs[t] = make([]Buckets, buckets, buckets)
-		c.TableCounters[t].Size = buckets * slots
-		for b, _ := range c.tbs[t] {
-			c.tbs[t][b] = makeSlots(c.tbs[t][b], slots)
-			//c.tbs[t][b] = make(Buckets, slots, slots)
-			// the following not needed
-			for s, _ := range c.tbs[t][b] {
-				c.tbs[t][b][s].val = c.emptyValue
-			}
-		}
+	c.tbs = [][]Buckets{}
+	c.TableCounters = []TableCounters{}
+	c.seeds = []uint64{}
+	c.hfs = []hash.Hash64{}
+	c.hs = []uint64{}
+	for i := 0; i < tables; i++ {
+		c.addTable(1.0)
 	}
+	//fmt.Printf("c=%#v\n", c)
 	return c
 }
 
@@ -448,9 +418,9 @@ func (c *Cuckoo) SetEvictionSeed(seed int64) {
    seed := int64(0)
    // fixed pattern or different values each time
    if *ranf {
-       seed = time.Now().UTC().UnixNano()
+	   seed = time.Now().UTC().UnixNano()
    } else {
-       seed = int64(0)
+	   seed = int64(0)
    }
    rand.Seed(seed)
 */
@@ -465,6 +435,23 @@ func (c *Cuckoo) calcHashForTable(t int, key Key) uint64 {
 /*
 func  (c *Cuckoo) calcHashForTable(t int, key Key) {
 	c.hs[t] = c.calcHash(c.hf[t], c.seeds[t], key)
+}
+*/
+
+/*
+func (c *Cuckoo) lowHash(hash int64) {
+	switch c.sectors {
+	case 1:
+		return 0
+	case 2:
+		return hash & 1
+	case 4:
+		return hash & 3
+	case 8:
+		return hash & 7
+	case 16:
+		return hash & 15
+	}
 }
 */
 
@@ -630,6 +617,8 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 
 			//fmt.Printf("Insert: next table, h=%#x, level=%d, table=%d, bucket=%d, key=%d, value=%d\n", h, level, t, b, k, v)
 			// check all the slots in the current table and see if we can insert
+			//s := lowHash(h, )
+			//for {
 			for s, _ := range c.tbs[t][b] {
 				c.Probes++
 				pk = c.tbs[t][b][s].key // avoid previous allocation
@@ -652,6 +641,11 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 					c.TableCounters[t].Elements++
 					return true
 				}
+			}
+			// unproven and untested optimization below XXX
+			// if first insert attempt and no slots in this table and more than 2 tables, try the next table
+			if depth == 0 && len(c.tbs) > 2 {
+				continue
 			}
 			// No slots available in this table available, evict a random KV pair and store the current KV where it was.
 			// move to the next table and different bucket and hope it works out better.

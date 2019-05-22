@@ -65,15 +65,17 @@ func ui64tob2(b []byte, key Key) {
 func (c *Cuckoo) calcHash(hf hash.Hash64, seed uint64, key Key) uint64 {
 	// speed up a common key case
 	//fmt.Printf("%d ", c.NumericKeySize)
+	//fmt.Printf("calcHash: seed=%d, key=%v\n", seed, key)
 	if c.hashno == aes {
 		if c.NumericKeySize == 8 && c.hf64 != nil {
-			//fmt.Printf("8")
+			//fmt.Printf("8 key=%v, h=%v\n", uint64(key), c.hf64(uint64(key), seed))
 			//ui64tob1(c.buf.b, key)
 			//ui64tob2(c.buf.b, key)
 			return c.hf64(uint64(key), seed)
 		} else {
+			//fmt.Printf("4")
 			if c.NumericKeySize == 4 && c.hf32 != nil {
-				ui32tob(c.buf.b, key)
+				//ui32tob(c.buf.b, key)
 				return c.hf32(uint32(key), seed)
 			}
 		}

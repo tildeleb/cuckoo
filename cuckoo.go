@@ -100,7 +100,7 @@ type Table struct {
 }
 
 // The main data structure for cuckoo hash.
-// Most fields are private but the counters are public.
+// Most fields are private but the counters and config are public.
 //indexed Slots defined in kv_array.go or kv_slice.go
 type Cuckoo struct {
 	tbs           [][]Slots       // a slice  of Tables, each table having a slice of Slots, each slot holding a Bucket
@@ -300,13 +300,17 @@ func (c *Cuckoo) addTable(growFactor float64) {
 	// perhaps reset the stats ???
 }
 
-// Create a new cuckoo hash of size  = tables * buckets * slots.
-// Don't allow more than size * loadFactor elements to be stored.
-// A loadFactor of 1.0 means the hash table can be completely full.
-// Use hashName as the hash function.
-// If specified, use emptyKey as the key that signifies that an element is unused.
-// However, often the default, the Go zero initization suffices.
+// Create a new cuckoo hash table of size  = tables * buckets * slots.
+// If buckets is negative, the next prime number greater than abs(buckets) is automatically generated,
 // You can pass an eseed to seed the random number generator used to select a bucket for eviction.
+// Don't allow more than size * loadFactor elements to be stored.
+// Therefore, a loadFactor of 1.0 means the hash table can be completely full.
+// Use a lower loadFactor to reduce the amount of CPU time used for Inserts when the table gets full.
+// Use hashName to specify which hash function to use.
+// Currently the only valid hashName strings are "j364" and "aes".
+// Only use "aes" on Intel 64 bit machines with the AES instructions.
+// If specified, use emptyKey as the key that signifies that an element is unused.
+// However, often the default, the Go zero initialization suffices as the emptyKey.
 func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName string, emptyKey ...Key) *Cuckoo {
 	var s Slots
 	var b Bucket
@@ -323,7 +327,7 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 		buckets = pbuckets
 	}
 
-	if tables <= 0 || buckets <= 0 || slots < 1 || loadFactor < 0.0 || loadFactor > 1.0 {
+	if tables < 1 || buckets < 1 || slots < 1 || loadFactor < 0.0 || loadFactor > 1.0 {
 		fmt.Printf("New: tables=%d, buckets=%d, slots=%d, loadFactor=%f, hashName=%q\n", tables, buckets, slots, loadFactor, hashName)
 		return nil
 	}

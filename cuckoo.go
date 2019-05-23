@@ -94,8 +94,13 @@ type Config struct {
 // and the second index is the slot number
 type Table struct {
 	buckets       []Slots     // each indexed bucket contains a slice of Bucket, called Slots, defined in kv_array.go or kv_slice.go
+	c             *Cuckoo     // point back to main data structure
 	seed          uint64      // seed used per table to make a unique hash function
 	hfs           hash.Hash64 // hash function to use, the design allows for different hash functions per table but that is not used
+	Nbuckets      int         // number of buckets
+	Nslots        int         // number of slots
+	Size          int         // Size = Tables * Buckets * Slots
+	MaxElements   int         // maximum number of elements the data structure can hold
 	TableCounters             // per Table stats
 }
 
@@ -103,17 +108,17 @@ type Table struct {
 // Most fields are private but the counters and config are public.
 //indexed Slots defined in kv_array.go or kv_slice.go
 type Cuckoo struct {
-	tbs           [][]Slots       // a slice  of Tables, each table having a slice of Slots, each slot holding a Bucket
-	TableCounters []TableCounters // per table stats
-	seeds         []uint64        // seeds used per table
-	hfs           []hash.Hash64   // one for each table + the last one reserved for fingerprints
-	hs            []uint64        // hash sums for each table and fingerprint, no longer used
-	r             uint64          // reciprocal of Buckets
-	n             uint64          // Size
-	rot           int             // table rotator
-	fp            bool            // first pass of table insert
-	Config                        // config data
-	Counters                      // stats
+	tables []*Table // a slice  of Tables, each table having a slice of Slots, each slot holding a Bucket
+	//TableCounters []TableCounters // per table stats
+	//seeds         []uint64        // seeds used per table
+	//hfs           []hash.Hash64   // one for each table + the last one reserved for fingerprints
+	//hs            []uint64        // hash sums for each table and fingerprint, no longer used
+	//r             uint64          // reciprocal of Buckets
+	//n             uint64          // Size
+	rot      int  // table rotator
+	fp       bool // first pass of table insert
+	Config        // config data
+	Counters      // stats
 
 	hashno int         // hash function
 	hf     hash.Hash64 // generic hash function
@@ -246,16 +251,16 @@ func (c *Cuckoo) GetCounter(s string) int {
 
 // Get the value of some of the table counters
 func (c *Cuckoo) GetTableCounter(t int, s string) int {
-	if t > len(c.TableCounters) {
+	if t > c.Ntables {
 		panic("GetTableCounter")
 	}
 	switch s {
 	case "size":
-		return c.TableCounters[t].Size
+		return c.tables[t].Size
 	case "elements":
-		return c.TableCounters[t].Elements
+		return c.tables[t].Elements
 	case "bumps":
-		return c.TableCounters[t].Bumps
+		return c.tables[t].Bumps
 	default:
 		panic("GetTableCounter")
 	}
@@ -277,26 +282,30 @@ func (c *Cuckoo) rbetween(a int, b int) int {
 func (c *Cuckoo) addTable(growFactor float64) {
 	//fmt.Printf("table: %d\n", c.Ntables)
 	c.Ntables++
-	buckets := c.Nbuckets
+	buckets := int(float64(c.Nbuckets) * growFactor)
 	slots := c.Nslots
 	c.Size += buckets * slots
 	c.MaxElements = int(float64(c.Size) * c.MaxLoadFactor)
-	newTable := make([]Slots, buckets, buckets)
-	for b, _ := range newTable {
-		if len(newTable[b]) == 0 {
-			newTable[b] = makeSlots(newTable[b], slots)
-			for s, _ := range newTable[b] {
-				newTable[b][s].val = c.emptyValue // ???
+	t := new(Table)
+	t.buckets = make([]Slots, buckets, buckets)
+	// we should do this lazily
+	for b, _ := range t.buckets {
+		if len(t.buckets[b]) == 0 {
+			t.buckets[b] = makeSlots(t.buckets[b], slots)
+			for s, _ := range t.buckets[b] {
+				t.buckets[b][s].val = c.emptyValue // ???
 			}
 		}
 	}
-	c.tbs = append(c.tbs, newTable)
-	c.seeds = append(c.seeds, uint64(len(c.seeds)+1))
-	//fmt.Printf("c.seeds=%v\n", c.seeds)
-	c.hfs = append(c.hfs, c.getHash(c.HashName, uint64(c.seeds[len(c.seeds)-1])))
-	//fmt.Printf("c.hfs=%v\n", c.seeds)
-	c.hs = append(c.hs, 0)
-	c.TableCounters = append(c.TableCounters, TableCounters{Size: c.Nbuckets * c.Nslots})
+	t.seed = uint64(len(c.tables) + 1)
+	t.hfs = c.getHash(c.HashName, t.seed)
+	t.Nbuckets = c.Nbuckets
+	t.Nslots = c.Nslots
+	t.Size = t.Nbuckets * t.Nslots
+	t.MaxElements = int(float64(t.Size) * c.MaxLoadFactor)
+	t.c = c
+	c.tables = append(c.tables, t)
+
 	// perhaps reset the stats ???
 }
 
@@ -352,8 +361,6 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 	c.buf = newBuf(2048)
 	c.encoder = binary.NewEncoder(c.buf)
 	c.grow = true
-	c.n = uint64(buckets)
-	c.r = uint64(4294967296) / c.n // reciprocal of buckets
 	c.StartLevel, c.LowestLevel = InitialStartLevel, InitialLowestLevel
 	c.MaxLoadFactor = loadFactor
 	if len(emptyKey) > 0 {
@@ -369,18 +376,7 @@ func New(tables, buckets, slots int, eseed int64, loadFactor float64, hashName s
 
 	c.BucketSize = int(unsafe.Sizeof(b))
 	c.SlotsSize = int(unsafe.Sizeof(s))
-	//fmt.Printf("c.seeds=%#v\n", c.seeds)
 
-	//fmt.Printf("c.seeds=%#v\n", c.seeds)
-	//fmt.Printf("c.hfs=%#v\n", c.hfs)
-	//fmt.Printf("c.hf=%#v\n", c.hf)
-	//fmt.Printf("New: c.Config=%#v\n", c.Config)
-
-	c.tbs = [][]Slots{}
-	c.TableCounters = []TableCounters{}
-	c.seeds = []uint64{}
-	c.hfs = []hash.Hash64{}
-	c.hs = []uint64{}
 	for i := 0; i < tables; i++ {
 		c.addTable(1.0)
 	}
@@ -439,8 +435,8 @@ func (c *Cuckoo) SetEvictionSeed(seed int64) {
 */
 
 // Given key calculate the hash for the specified table
-func (c *Cuckoo) calcHashForTable(t int, key Key) uint64 {
-	return c.calcHash(c.hfs[t], c.seeds[t], key)
+func (t *Table) calcHashForTable(key Key) uint64 {
+	return t.c.calcHash(t.hfs, t.seed, key)
 }
 
 // end inlined functions
@@ -468,15 +464,6 @@ func (c *Cuckoo) lowHash(hash int64) {
 }
 */
 
-// Calculate hashes for key for all hash tables. No longer used.
-func (c *Cuckoo) calcHashes(key Key) {
-	// calculate hashes for each table
-	for k, v := range c.hfs {
-		c.hs[k] = c.calcHash(v, c.seeds[k], key)
-		//fmt.Printf("hf[%d]=0x%x\n", k, c.hs[k])
-	}
-}
-
 // Given key return the value and a "ok" bool indicating success or failure.
 func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 	c.Lookups++
@@ -489,37 +476,15 @@ func (c *Cuckoo) Lookup(key Key) (Value, bool) {
 		}
 	}
 
-	//c.calcHashes(key)
-	for t, _ := range c.tbs {
-		//ha := c.calcHashForTable(t, key)
-		//ba := ha % uint32(c.Nbuckets)
+	for _, t := range c.tables {
+		h := uint64(t.calcHashForTable(key))
+		b := h % uint64(t.Nbuckets)
 
-		// this was an experiment to see if pre-calculating the reciprocal would be faster than MOD
-		// it is by 10% for L1 fit and 3% for L2 fit, however switching to assembly might make it better than that.
-		// L1 fit 11.345 total vs 12.113 total
-		// L2 fit 1:00.74 total vs 1:02.49 total
-
-		/*
-			b := h - ((c.r * h) >> 32) * c.n
-			if b > c.n {
-				b -= c.n
-			}
-		*/
-		h := uint64(c.calcHashForTable(t, key))
-		b := h % uint64(c.Nbuckets)
-
-		/*
-			bb := uint32(b)
-			if ba != bb {
-				fmt.Printf("ba=%d, bb=%d\n", ba, bb)
-			}
-		*/
-
-		for s, _ := range c.tbs[t][b] {
+		for s, _ := range t.buckets[b] {
 			//fmt.Printf("Lookup: key=%d, table=%d, bucket=%d, slot=%d, found key=%d\n", key, t, b, s, c.tbs[t][b][s].key)
-			if c.tbs[t][b][s].key == key {
+			if t.buckets[b][s].key == key {
 				//fmt.Printf("Lookup: table=%d, bucket=%d, slot=%d, key=%d, value=%d\n", t, b, s, key, c.tbs[t][b][s].val)
-				return c.tbs[t][b][s].val, true
+				return t.buckets[b][s].val, true
 			}
 		}
 	}
@@ -542,28 +507,19 @@ func (c *Cuckoo) Delete(key Key) (Value, bool) {
 		}
 	}
 
-	//c.calcHashes(key)
-	for t, _ := range c.tbs {
-		b := c.calcHashForTable(t, key) % uint64(c.Nbuckets)
-		//b := c.hs[t]
-		/*
-			h := uint64(c.calcHashForTable(t, key))
-			b := h - ((c.r * h) >> 32) * c.n
-			if b > c.n {
-				b -= c.n
-			}
-		*/
-		for s, _ := range c.tbs[t][b] {
+	for _, t := range c.tables {
+		b := t.calcHashForTable(key) % uint64(t.Nbuckets)
+		for s, _ := range t.buckets[b] {
 			//fmt.Printf("Delete: check key=%d, table=%d, bucket=%d, slot=%d, found key=%d\n", key, t, b, s, c.tbs[t][b][s].key)
-			if c.tbs[t][b][s].key == key {
+			if t.buckets[b][s].key == key {
 				//fmt.Printf("Delete: found key=%d, value=%d, table=%d, bucket=%d, slot=%d\n", key, c.tbs[t][b][s].val, t, b, s)
-				c.tbs[t][b][s].key = c.emptyKey
-				c.TableCounters[t].Elements--
+				t.buckets[b][s].key = c.emptyKey
+				t.Elements--
 				c.Elements--
 				if c.Elements < 0 {
 					panic("Delete")
 				}
-				return c.tbs[t][b][s].val, true
+				return t.buckets[b][s].val, true
 			}
 		}
 	}
@@ -582,66 +538,39 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 	var bumps int
 	var depth int
 
-	var ins func(kx Key, vx Value) bool // forwqrd declare the closure so we can call it recursively
-	var _ = func() {
-		fmt.Printf("<")
-		for k, v := range c.hs {
-			if k != 0 {
-				fmt.Printf(", ")
-			}
-			fmt.Printf("%d", v)
-		}
-		fmt.Printf(">\n")
-	}
+	var ins func(kx Key, vx Value) bool // forward declare the closure so we can call it recursively
 	ins = func(kx Key, vx Value) bool {
 		var sk Key
 		var sv Value
 		var pk Key
-		//c.calcHashes(kx)
 		//fmt.Printf("Insert: level=%d, key=%d, ", level, kx)
-		//phv()
 		depth++
 		k = kx // was :=
 		v = vx // was :=
 		// we used to move left to right, with the chance of an insert increasing as
 		// we move because the tables filled up left to right.
 		// Now we rotate the starting point. Why has no one done this before.
-		t := c.rot
-		for _, _ = range c.tbs {
-			// rotate which table we start inserts with
-			//ha := c.calcHashForTable(t, k)
-			//ba := ha % uint32(c.Nbuckets)
-			/*
-				b := h - ((c.r * h) >> 32) * c.n
-				if b > c.n {
-					b -= c.n
-				}
-			*/
-			//h := uint64(v)
-			//ui32tob(c.buf.b, k)
-			//ui32tob(c.buf.b, k)
-			//h := uint64(murmur3.Sum32(c.buf.b, uint32(c.seeds[t])))
-			//h := uint64(jenkins3.Sum32(c.buf.b, uint32(c.seeds[t])))
-			//h := aeshash.Hash64(uint64(k), c.seeds[t])
-			h := uint64(c.calcHashForTable(t, k))
-			//fmt.Printf("h1=%#x, h=%#x\n", h1, h)
-			//h := uint64(k)
-			b := h % uint64(c.Nbuckets)
+		ti := c.rot
+		for _, _ = range c.tables {
+			t := c.tables[ti]
+			h := uint64(t.calcHashForTable(k))
+			//fmt.Printf("h=%#x\n", h)
+			b := h % uint64(t.Nbuckets)
 
 			//fmt.Printf("Insert: next table, h=%#x, level=%d, table=%d, bucket=%d, key=%d, value=%d\n", h, level, t, b, k, v)
 			// check all the slots in the current table and see if we can insert
 			//s := lowHash(h, )
 			//for {
-			for s, _ := range c.tbs[t][b] {
+			for s, _ := range t.buckets[b] {
 				c.Probes++
-				pk = c.tbs[t][b][s].key // avoid previous allocation
+				pk = t.buckets[b][s].key // avoid previous allocation
 				c.TraceCnt++
 				if c.Trace {
 					fmt.Printf("{%q: %d, %q: %d, %q: %q, %q: %d, %q: %d, %q: %d, %q: %v, %q: %v},\n",
 						"i", c.TraceCnt, "l", level, "op", "P", "t", t, "b", b, "s", s, "k", k, "v", v)
 				}
 				if pk == c.emptyKey || pk == k { // added replacement semantics
-					c.tbs[t][b][s].key, c.tbs[t][b][s].val = k, v
+					t.buckets[b][s].key, t.buckets[b][s].val = k, v
 					c.TraceCnt++
 					if c.Trace {
 						fmt.Printf("{%q: %d, %q: %d, %q: %q, %q: %d, %q: %d, %q: %d, %q: %v, %q: %v},\n",
@@ -651,30 +580,30 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 						//fmt.Printf("Insert: h=%#x, level=%d, table=%d, bucket=%d, slot=%d, pk=%d, key=%d, value=%d\n", h, level, t, b, s, pk, k, v)
 					}
 					c.Elements++
-					c.TableCounters[t].Elements++
+					t.Elements++
 					return true
 				}
 			}
 			// unproven and untested optimization below XXX
 			// if first insert attempt and no slots in this table and more than 2 tables, try the next table
-			if depth == 0 && len(c.tbs) > 2 {
+			if depth == 0 && len(c.tables) > 2 {
 				continue
 			}
 			// No slots available in this table available, evict a random KV pair and store the current KV where it was.
 			// move to the next table and different bucket and hope it works out better.
 			bumps++
 			c.Bumps++
-			c.TableCounters[t].Bumps++
-			victim := c.rbetween(0, c.Nslots-1)
+			t.Bumps++
+			victim := c.rbetween(0, t.Nslots-1)
 			//fmt.Printf("insert: level=%d, bump value=%d for value=%d, table=%d, bucket=%d, slot=%d\n", level, c.tbs[t][b][victim].val, val, t, b, victim)
-			sk, sv = c.tbs[t][b][victim].key, c.tbs[t][b][victim].val // avoid previous stack allocation
+			sk, sv = t.buckets[b][victim].key, t.buckets[b][victim].val // avoid previous stack allocation
 			c.TraceCnt++
 			if c.Trace {
 				fmt.Printf("{%q: %d, %q: %d, %q: %q, %q: %d, %q: %d, %q: %d, %q: %v, %q: %v},\n",
 					"i", c.TraceCnt, "l", level, "op", "E", "t", t, "b", b, "s", victim, "k", sk, "v", v)
 			}
-			c.tbs[t][b][victim].key = k
-			c.tbs[t][b][victim].val = v
+			t.buckets[b][victim].key = k
+			t.buckets[b][victim].val = v
 			c.TraceCnt++
 			if c.Trace {
 				fmt.Printf("{%q: %d, %q: %d, %q: %q, %q: %d, %q: %d, %q: %d, %q: %v, %q: %v},\n",
@@ -684,9 +613,9 @@ func (c *Cuckoo) insert(key Key, val Value, ilevel int) (ok bool, level int) {
 			v = sv
 			//c.calcHashes(k) ??? XXX ???
 			//fmt.Printf("insert: level=%d, new key=%d, val=%d\n", level, k, v)
-			t++
-			if t > len(c.tbs)-1 {
-				t = 0
+			ti++
+			if ti > len(c.tables)-1 {
+				ti = 0
 			}
 		}
 		// Could not find any space for key in any table. Since the key has now changed,
@@ -803,16 +732,17 @@ func (c *Cuckoo) InsertL(key Key, val Value) (ok bool, rlevel int) {
 	return
 }
 
+// should this be redone??
 func (c *Cuckoo) Map(iter func(c *Cuckoo, key Key, val Value) (stop bool)) {
 	if c.emptyKeyValid {
 		iter(c, c.emptyKey, c.emptyValue)
 	}
 
-	for _, vt := range c.tbs {
-		for _, vb := range vt {
-			for _, vs := range vb {
-				if vs.key != c.emptyKey {
-					if iter(c, vs.key, vs.val) {
+	for _, t := range c.tables {
+		for _, s := range t.buckets {
+			for _, b := range s {
+				if b.key != c.emptyKey {
+					if iter(c, b.key, b.val) {
 						return
 					}
 				}
@@ -823,12 +753,12 @@ func (c *Cuckoo) Map(iter func(c *Cuckoo, key Key, val Value) (stop bool)) {
 
 // doesn't print the value if c.emptyKeyValid is true
 func (c *Cuckoo) Print() {
-	for t, vt := range c.tbs {
-		for b, vb := range vt {
-			fmt.Printf("[%d][%d]: ", t, b)
+	for ti, t := range c.tables {
+		for si, s := range t.buckets {
+			fmt.Printf("[%d][%d]: ", ti, si)
 			cnt := 0
-			for _, vs := range vb {
-				if vs.key != c.emptyKey {
+			for _, b := range s {
+				if b.key != c.emptyKey {
 					cnt++
 				}
 			}

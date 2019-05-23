@@ -218,6 +218,7 @@ func trials(tables, buckets, slots, trials int, eseed int64, lf float64, ibase i
 			td.Limited = true
 		}
 		if *fo {
+			//c.Print()
 			continue
 		}
 

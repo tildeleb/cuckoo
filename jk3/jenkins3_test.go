@@ -2,12 +2,16 @@
 package jenkins3_test
 
 //import "flag"
-import "fmt"
+import (
+	"fmt"
+	"testing"
+
+	"github.com/leb.io/cuckoo/jenkins3"
+)
+
 //import "math"
 //import "math/rand"
 //import "runtime"
-import "github.com/tildeleb/cuckoo/jenkins3"
-import "testing"
 
 func TestBasic(t *testing.T) {
 
@@ -36,7 +40,7 @@ func TestBasic(t *testing.T) {
 		t.FailNow()
 	}
 
-  	b, c = 0xdeadbeef, 0xdeadbeef
+	b, c = 0xdeadbeef, 0xdeadbeef
 	c, b = jenkins3.HashString("", c, b)
 	//fmt.Printf("%08x, %08x\n", c, b)	// 9c093ccd bd5b7dde
 	if c != 0x9c093ccd || b != 0xbd5b7dde {

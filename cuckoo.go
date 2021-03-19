@@ -10,12 +10,13 @@ import (
 	_ "bytes"
 	_ "encoding/binary"
 	"fmt"
-	"github.com/alecthomas/binary"
 	"hash"
-	"leb.io/cuckoo/primes"
 	"math"
 	"math/rand"
 	"unsafe"
+
+	"github.com/alecthomas/binary"
+	"leb.io/cuckoo/internal/primes"
 )
 
 const (

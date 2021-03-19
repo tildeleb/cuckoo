@@ -10,11 +10,6 @@ import (
 	cr "crypto/rand"
 	"flag"
 	"fmt"
-	"leb.io/cuckoo"
-	"leb.io/cuckoo/dstest"
-	"leb.io/cuckoo/primes"
-	"leb.io/cuckoo/siginfo"
-	"leb.io/hrff"
 	"log"
 	_ "math"
 	_ "math/rand"
@@ -23,6 +18,12 @@ import (
 	"runtime/pprof"
 	"time"
 	"unsafe"
+
+	"leb.io/cuckoo"
+	"leb.io/cuckoo/internal/dstest"
+	"leb.io/cuckoo/internal/primes"
+	"leb.io/cuckoo/internal/siginfo"
+	"leb.io/hrff"
 )
 
 func tdiff(begin, end time.Time) time.Duration {

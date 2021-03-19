@@ -6,9 +6,10 @@ package cuckoo
 import (
 	"errors"
 	"hash"
+
 	"leb.io/aeshash"
-	"leb.io/cuckoo/jenkins264"
-	"leb.io/cuckoo/jk3"
+	"leb.io/cuckoo/internal/jenkins264"
+	"leb.io/cuckoo/internal/jenkins3"
 )
 
 // Set hash function used

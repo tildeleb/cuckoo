@@ -1,17 +1,20 @@
 // Copyright © 2014-2017 Lawrence E. Bakst. All rights reserved.
 package cuckoo_test
 
-import . "leb.io/cuckoo"
-import . "leb.io/cuckoo/dstest"
-import "leb.io/hrff"
+import (
+	"fmt"
+	"math/rand"
+	"runtime"
+	"testing"
+
+	. "leb.io/cuckoo"
+	. "leb.io/cuckoo/internal/dstest"
+	"leb.io/hrff"
+)
 
 //import "flag"
-import "fmt"
 
 //import "math"
-import "math/rand"
-import "runtime"
-import "testing"
 
 var r = rand.Float64
 var b = int(0)

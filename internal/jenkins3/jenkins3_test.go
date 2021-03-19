@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/leb.io/cuckoo/jenkins3"
+	"leb.io/cuckoo/internal/jenkins3"
 )
 
 //import "math"

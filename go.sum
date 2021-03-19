@@ -13,8 +13,6 @@ github.com/spaolacci/murmur3 v1.1.0/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
-github.com/tildeleb/cuckoo v0.0.0-20210318125014-3e191f3e0552 h1:aM/5du5hbHa7bMVVMLLnq03HTmM3g9brF3UgOiAr5zA=
-github.com/tildeleb/cuckoo v0.0.0-20210318125014-3e191f3e0552/go.mod h1:OtzVuZAqk/+YnglJMnkVjAarNRN6EMPwFnukYerg0a8=
 github.com/willf/bitset v1.1.11 h1:N7Z7E9UvjW+sGsEl7k/SJrvY2reP1A07MrGuCjIOjRE=
 github.com/willf/bitset v1.1.11/go.mod h1:83CECat5yLh5zVOf4P1ErAgKA5UDvKtgyUABdr3+MjI=
 github.com/zhenjl/bloom v0.0.0-20151026233158-e24b032dccb1 h1:s7Fcgy4ILv5n3dz+dQvpRntBtPPw7Ffbyh3Q4JY+kk4=

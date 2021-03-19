@@ -8,7 +8,6 @@ require (
 	github.com/dataence/cityhash v0.0.0-20131128155616-cdd6a94144ab
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.7.0 // indirect
-	github.com/tildeleb/cuckoo v0.0.0-20210318125014-3e191f3e0552
 	github.com/willf/bitset v1.1.11
 	github.com/zhenjl/bloom v0.0.0-20151026233158-e24b032dccb1 // indirect
 	github.com/zhenjl/cityhash v0.0.0-20131128155616-cdd6a94144ab // indirect

@@ -16,7 +16,7 @@ import (
 	"unsafe"
 
 	"github.com/alecthomas/binary"
-	"leb.io/cuckoo/internal/primes"
+	"leb.io/cuckoo/primes"
 )
 
 const (

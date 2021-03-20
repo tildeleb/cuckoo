@@ -21,8 +21,8 @@ import (
 
 	"leb.io/cuckoo"
 	"leb.io/cuckoo/internal/dstest"
-	"leb.io/cuckoo/internal/primes"
 	"leb.io/cuckoo/internal/siginfo"
+	"leb.io/cuckoo/primes"
 	"leb.io/hrff"
 )
 
